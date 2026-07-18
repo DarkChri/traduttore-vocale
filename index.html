@@ -646,7 +646,7 @@
   var call = {
     stream:null, ctx:null, node:null, active:false, surf:'',
     worker:null, loadedModel:'', modelReady:false, device:null,
-    lastText:'', lastVoice:0, watchdog:null, wasmHintShown:false
+    lastText:'', lastVoice:0, watchdog:null, wasmHintShown:false, slowHintShown:false
   };
   function callListeningText() {
     var s = call.surf === 'window' ? 'della finestra condivisa' : call.surf === 'browser' ? 'della scheda condivisa' : 'della chiamata';
@@ -668,7 +668,7 @@
   ].join('\n');
 
   var WORKER_SRC = [
-    "let transcriber = null, currentModel = '', device = '';",
+    "let transcriber = null, currentModel = '', device = '', quant = '';",
     'async function load(model){',
     "  const T = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3');",
     '  T.env.allowLocalModels = false;',
@@ -679,9 +679,14 @@
     '  );',
     '  try {',
     "    if (!navigator.gpu) throw new Error('webgpu assente');",
-    "    transcriber = await mk('webgpu', 'fp32'); device = 'webgpu';",
+    '    try {',
+    "      transcriber = await mk('webgpu', { encoder_model: 'fp16', decoder_model_merged: 'q4' });",
+    "      device = 'webgpu'; quant = 'fp16+q4';",
+    '    } catch (e1) {',
+    "      transcriber = await mk('webgpu', 'fp32'); device = 'webgpu'; quant = 'fp32';",
+    '    }',
     '  } catch (e) {',
-    "    transcriber = await mk('wasm', 'q8'); device = 'wasm';",
+    "    transcriber = await mk('wasm', 'q8'); device = 'wasm'; quant = 'q8';",
     '  }',
     '  currentModel = model;',
     '}',
@@ -691,7 +696,7 @@
     "    if (m.type === 'load') {",
     "      if (currentModel !== m.model) { transcriber = null; currentModel = ''; }",
     '      if (!transcriber) await load(m.model);',
-    "      postMessage({ type:'ready', device: device });",
+    "      postMessage({ type:'ready', device: device, quant: quant });",
     "    } else if (m.type === 'run') {",
     "      if (!transcriber) throw new Error('modello non caricato');",
     "      const opts = { task: 'transcribe' };",
@@ -745,6 +750,7 @@
         call.modelReady = true;
         call.device = m.device;
         window.__dbg.device = m.device;
+        window.__dbg.quant = m.quant;
         mdlProgress.textContent = 'Modello pronto · ' + (m.device === 'webgpu' ? 'GPU ⚡' : 'CPU');
         if (mode === 'call') setStatus(call.active ? callListeningText() : 'callIdle');
         if (call.active) {
@@ -801,9 +807,16 @@
   // coda dei segmenti audio verso il worker (max 2 in attesa: si resta "live")
   function submitSegment(f32) {
     window.__dbg.segs++;
-    if (jobs.length >= 2) jobs.shift();
+    if (jobs.length >= 2) { jobs.shift(); window.__dbg.dropped++; maybeSlowHint(); }
     jobs.push(f32);
     pump();
+  }
+  function maybeSlowHint() {
+    if (call.slowHintShown || modelSel.value === 'tiny') return;
+    if (window.__dbg.dropped >= 3) {
+      call.slowHintShown = true;
+      showBanner('Il PC non riesce a stare dietro al parlato con questa qualità: alcune frasi vengono saltate. Imposta “Qualità riconoscimento” su ⚡ Veloce per sottotitoli più fluidi.', 'info');
+    }
   }
   function pump() {
     if (workerBusy || !jobs.length || !call.modelReady) return;
@@ -877,7 +890,11 @@
       if (rms >= thr) { seg.speechMs += 100; seg.silenceMs = 0; }
       else seg.silenceMs += 100;
       var segMs = seg.frames.length * 100;
-      if (seg.silenceMs >= 500 || segMs >= 5000) {
+      // se la trascrizione è indietro, taglia segmenti più lunghi: Whisper elabora
+      // un blocco da 12 s quasi allo stesso costo di uno da 4 s (più resa, meno coda)
+      var pending = jobs.length + (workerBusy ? 1 : 0);
+      var maxMs = Math.min(12000, 4000 + 4000 * pending);
+      if (seg.silenceMs >= 500 || segMs >= maxMs) {
         var frames = seg.frames, ok = seg.speechMs >= 250;
         seg.frames = []; seg.speech = false; seg.speechMs = 0; seg.silenceMs = 0;
         if (ok) submitSegment(concatFrames(frames));
@@ -1066,7 +1083,7 @@
   };
 
   // ---------- Hook di test/debug (usabili dalla console) ----------
-  window.__dbg = { device: null, segs: 0, lastAsr: '', lastError: null, progress: 0 };
+  window.__dbg = { device: null, quant: '', segs: 0, dropped: 0, lastAsr: '', lastError: null, progress: 0 };
   window.__test = function (t) { handleFinal(t); };
   // test del percorso live completo (VAD + segmentazione), non solo del worker
   window.__testVad = function (url) {
