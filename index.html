@@ -927,13 +927,20 @@
   function startCall() {
     bannerEl.hidden = true;
     var pref = capSel.value || 'window';
+    // istruzioni bene in vista mentre è aperto il selettore di condivisione
+    subPrev.textContent = '';
+    subCur.textContent = '1️⃣ Scegli cosa condividere · 2️⃣ Attiva “Condividi anche l’audio” (interruttore in basso) · 3️⃣ Premi Condividi';
+    subsEl.classList.remove('hide');
+    clearTimeout(subsTimer);
+    if (pipEls) pipEls.cur.textContent = 'Attiva “Condividi anche l’audio” nella finestra di scelta!';
     navigator.mediaDevices.getDisplayMedia({
       video: { displaySurface: pref },
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, suppressLocalAudioPlayback: false },
+      audio: true,
       systemAudio: 'include',
       selfBrowserSurface: 'exclude',
       surfaceSwitching: 'include'
     }).then(function (stream) {
+      subsEl.classList.add('hide');
       var vt = stream.getVideoTracks()[0];
       var surf = (vt && vt.getSettings && vt.getSettings().displaySurface) || pref;
       if (!stream.getAudioTracks().length) {
@@ -943,7 +950,7 @@
           capSel.onchange();
           showBanner('La finestra scelta non fornisce audio: o l’interruttore “Condividi anche l’audio” era spento, o il tuo browser non supporta ancora la cattura audio di una singola finestra. Ho impostato “Tutto lo schermo”: ripremi il pulsante e spunta “Condividi anche l’audio di sistema” (sentirà comunque solo la chiamata, se non c’è altro audio attivo).');
         } else {
-          showBanner('Non è stato condiviso nessun audio. Riprova attivando “Condividi anche l’audio di sistema” (schermo intero) o l’audio della scheda.');
+          showBanner('Non è stato condiviso nessun audio: nella finestrella di condivisione c’è un interruttore “Condividi anche l’audio di sistema”, in basso, spento di default. Riprova: premi di nuovo il pulsante, attiva quell’interruttore e poi Condividi. Una volta attivato, Chrome lo ricorda per le volte successive.');
         }
         return;
       }
@@ -990,6 +997,7 @@
       }
     }).catch(function () {
       // condivisione annullata dall'utente
+      subsEl.classList.add('hide');
       if (mode === 'call') setStatus('callIdle');
     });
   }
