@@ -24,9 +24,11 @@ poi apri http://localhost:8617
 ## Modalità Chiamata Discord
 
 1. Apri la scheda **🎧 Chiamata Discord** e scegli la lingua della chiamata (o **🌐 Rileva lingua**) e la lingua dei sottotitoli
-2. Premi il pulsante grande e, nella finestra di condivisione, scegli **Schermo intero** spuntando **"Condividi anche l'audio di sistema"** (oppure la **scheda** del browser con Discord, attivando l'audio della scheda)
-3. I sottotitoli tradotti compaiono in basso; con **🪟 Sottotitoli flottanti** si aprono in una finestrella sempre in primo piano, da tenere sopra Discord
+2. In **"Cosa catturare"** lascia **🪟 Una finestra**: premi il pulsante grande, seleziona la finestra di Discord e attiva **"Condividi anche l'audio"** — verrà tradotto solo l'audio di quella finestra
+3. I **sottotitoli flottanti** (finestrella sempre in primo piano) si aprono da soli all'avvio: trascinala sopra Discord. I sottotitoli compaiono anche in basso nella pagina
 4. Al primo avvio viene scaricato il modello di riconoscimento (una sola volta, poi resta in cache)
+
+> **Nota:** la cattura dell'audio di una *singola finestra* è una funzione recente di Chrome/Edge su Windows. Se per la finestra non compare l'opzione audio, l'app te lo segnala: usa **🖥️ Tutto lo schermo** con "Condividi anche l'audio di sistema" (sente tutto l'audio del PC, che in pratica durante una chiamata è solo la chiamata).
 
 La trascrizione avviene **localmente nel browser** con Whisper (WebGPU se disponibile, altrimenti CPU): l'audio della chiamata non viene inviato a nessun server. Per correttezza, avvisa i partecipanti che la chiamata viene sottotitolata.
 

@@ -165,8 +165,10 @@
     </button>
     <div id="status"></div>
     <div id="callHint" class="hide">
-      Premi il pulsante e nella finestra di condivisione scegli <b>Schermo intero</b> spuntando
-      <b>“Condividi anche l’audio di sistema”</b> (oppure la <b>scheda</b> del browser con Discord, con l’audio della scheda attivo).
+      Premi il pulsante, scegli la <b>finestra di Discord</b> (o quello che hai impostato in “Cosa catturare”)
+      e assicurati che l’interruttore <b>“Condividi anche l’audio”</b> sia attivo: l’audio di quella finestra verrà
+      trascritto e sottotitolato automaticamente. Se per la finestra non compare l’opzione audio, usa
+      <b>Tutto lo schermo</b> con “Condividi anche l’audio di sistema”.
       L’audio resta sul tuo PC: la trascrizione avviene localmente nel browser.
       Per correttezza, avvisa i partecipanti che la chiamata viene sottotitolata.
     </div>
@@ -183,6 +185,14 @@
 
   <div class="optrow hide" id="callRow">
     <div class="langbox">
+      <label for="capSel">Cosa catturare</label>
+      <select id="capSel">
+        <option value="window">🪟 Una finestra (es. Discord)</option>
+        <option value="monitor">🖥️ Tutto lo schermo</option>
+        <option value="browser">🌐 Una scheda del browser</option>
+      </select>
+    </div>
+    <div class="langbox">
       <label for="modelSel">Qualità riconoscimento</label>
       <select id="modelSel">
         <option value="tiny">⚡ Veloce</option>
@@ -190,6 +200,11 @@
         <option value="small">🎯 Alta — serve un PC potente</option>
       </select>
     </div>
+    <label class="switch">
+      <input type="checkbox" id="autoPip" checked>
+      <span class="track"></span>
+      🪟 Sottotitoli flottanti automatici
+    </label>
     <button class="ghost" id="pipBtn">🪟 Sottotitoli flottanti</button>
     <span id="mdlProgress"></span>
   </div>
@@ -248,6 +263,7 @@
       srcText = $('srcText'), dstText = $('dstText'), bannerEl = $('banner'), bannerMsg = $('bannerMsg'),
       histList = $('historyList'), emptyH = $('emptyH'), autoSpeak = $('autoSpeak'), typedInput = $('typedInput'),
       modelSel = $('modelSel'), pipBtn = $('pipBtn'), mdlProgress = $('mdlProgress'),
+      capSel = $('capSel'), autoPip = $('autoPip'),
       subsEl = $('subs'), subPrev = $('subPrev'), subCur = $('subCur'), callHint = $('callHint'), callRow = $('callRow');
 
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -278,6 +294,11 @@
   autoSpeak.checked = localStorage.getItem('tv_speak') !== '0';
   modelSel.value = localStorage.getItem('tv_model') || 'base';
   if (!modelSel.value) modelSel.value = 'base';
+  capSel.value = localStorage.getItem('tv_cap') || 'window';
+  if (!capSel.value) capSel.value = 'window';
+  autoPip.checked = localStorage.getItem('tv_autopip') !== '0';
+  capSel.onchange = function () { localStorage.setItem('tv_cap', capSel.value); };
+  autoPip.onchange = function () { localStorage.setItem('tv_autopip', autoPip.checked ? '1' : '0'); };
 
   function persist() {
     localStorage.setItem('tv_src', srcSel.value);
@@ -614,10 +635,14 @@
   };
 
   var call = {
-    stream:null, ctx:null, node:null, active:false,
+    stream:null, ctx:null, node:null, active:false, surf:'',
     worker:null, loadedModel:'', modelReady:false, device:null,
     noise:0.008, lastText:''
   };
+  function callListeningText() {
+    var s = call.surf === 'window' ? 'della finestra condivisa' : call.surf === 'browser' ? 'della scheda condivisa' : 'della chiamata';
+    return '🎧 In ascolto ' + s + '… i sottotitoli appaiono in basso';
+  }
   var jobs = [], workerBusy = false, jobId = 0;
   var seg = { frames:[], preroll:[], speech:false, speechMs:0, silenceMs:0 };
   var frameBuf = new Float32Array(1600), frameFill = 0; // 100 ms a 16 kHz
@@ -705,7 +730,7 @@
         call.device = m.device;
         window.__dbg.device = m.device;
         mdlProgress.textContent = 'Modello pronto · ' + (m.device === 'webgpu' ? 'GPU ⚡' : 'CPU');
-        if (mode === 'call') setStatus(call.active ? 'callListening' : 'callIdle');
+        if (mode === 'call') setStatus(call.active ? callListeningText() : 'callIdle');
         pump();
       } else if (m.type === 'result') {
         workerBusy = false;
@@ -831,16 +856,28 @@
 
   function startCall() {
     bannerEl.hidden = true;
+    var pref = capSel.value || 'window';
     navigator.mediaDevices.getDisplayMedia({
-      video: true,
+      video: { displaySurface: pref },
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, suppressLocalAudioPlayback: false },
-      systemAudio: 'include'
+      systemAudio: 'include',
+      selfBrowserSurface: 'exclude',
+      surfaceSwitching: 'include'
     }).then(function (stream) {
+      var vt = stream.getVideoTracks()[0];
+      var surf = (vt && vt.getSettings && vt.getSettings().displaySurface) || pref;
       if (!stream.getAudioTracks().length) {
         stream.getTracks().forEach(function (t) { t.stop(); });
-        showBanner('Non è stato condiviso nessun audio. Riprova scegliendo “Schermo intero” con “Condividi anche l’audio di sistema”, oppure una scheda del browser con l’audio della scheda attivo.');
+        if (surf === 'window') {
+          capSel.value = 'monitor';
+          capSel.onchange();
+          showBanner('La finestra scelta non fornisce audio: o l’interruttore “Condividi anche l’audio” era spento, o il tuo browser non supporta ancora la cattura audio di una singola finestra. Ho impostato “Tutto lo schermo”: ripremi il pulsante e spunta “Condividi anche l’audio di sistema” (sentirà comunque solo la chiamata, se non c’è altro audio attivo).');
+        } else {
+          showBanner('Non è stato condiviso nessun audio. Riprova attivando “Condividi anche l’audio di sistema” (schermo intero) o l’audio della scheda.');
+        }
         return;
       }
+      call.surf = surf;
       call.stream = stream;
       call.active = true;
       call.lastText = '';
@@ -860,7 +897,7 @@
         srcNode.connect(call.node);
         call.node.connect(mute);
         mute.connect(call.ctx.destination); // gain a 0: serve solo a far girare il grafo audio
-        setStatus(call.modelReady ? 'callListening' : 'callIdle');
+        setStatus(call.modelReady ? callListeningText() : 'callIdle');
       }).catch(function (e) {
         showBanner('Errore di inizializzazione audio: ' + e);
         stopCall();
@@ -896,9 +933,9 @@
     subsTimer = setTimeout(function () { subsEl.classList.add('hide'); }, 9000);
     if (pipEls) { pipEls.prev.textContent = subPrev.textContent; pipEls.cur.textContent = t; }
   }
-  if (!('documentPictureInPicture' in window)) pipBtn.classList.add('hide');
-  pipBtn.onclick = function () {
-    if (pipWin) { pipWin.close(); return; }
+  if (!('documentPictureInPicture' in window)) { pipBtn.classList.add('hide'); autoPip.parentElement.classList.add('hide'); }
+  function openPip() {
+    if (pipWin || !('documentPictureInPicture' in window)) return;
     documentPictureInPicture.requestWindow({ width: 760, height: 170 }).then(function (w) {
       pipWin = w;
       var d = w.document;
@@ -917,6 +954,9 @@
       });
       pipBtn.textContent = '🪟 Chiudi sottotitoli flottanti';
     }).catch(function () {});
+  }
+  pipBtn.onclick = function () {
+    if (pipWin) pipWin.close(); else openPip();
   };
 
   // ---------- Cambio modalità ----------
@@ -941,7 +981,7 @@
     srcText.setAttribute('data-placeholder', mode === 'call' ? 'Quello che dicono nella chiamata apparirà qui…' : 'Le tue parole appariranno qui…');
     if (mode !== 'call') { subsEl.classList.add('hide'); }
     updateMicUI();
-    if (mode === 'call') setStatus(call.active ? 'callListening' : 'callIdle');
+    if (mode === 'call') setStatus(call.active ? callListeningText() : 'callIdle');
     else if (!SR) setStatus('unsupported');
     else setStatus(state.active ? 'listening' : 'idle');
     updateLabels();
@@ -962,7 +1002,12 @@
   }
   micBtn.onclick = function () {
     if (mode === 'mic') { state.active ? stopSession() : startSession(); }
-    else { call.active ? stopCall() : startCall(); }
+    else if (call.active) { stopCall(); }
+    else {
+      // stessa interazione utente: la finestrella va aperta prima di avviare la cattura
+      if (autoPip.checked) openPip();
+      startCall();
+    }
   };
 
   // ---------- Hook di test/debug (usabili dalla console) ----------
