@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Traduttore Vocale in Tempo Reale</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root {
+    --bg:#0b1020; --card:rgba(255,255,255,.045); --border:rgba(255,255,255,.09);
+    --text:#e8ecf4; --dim:rgba(232,236,244,.55); --dimmer:rgba(232,236,244,.35);
+    --accent1:#7c5cff; --accent2:#22d3ee; --danger:#ef4444;
+  }
+  body {
+    font-family:'Segoe UI', system-ui, -apple-system, sans-serif;
+    background:
+      radial-gradient(1000px 600px at 15% -10%, rgba(124,92,255,.16), transparent 60%),
+      radial-gradient(900px 500px at 110% 20%, rgba(34,211,238,.10), transparent 55%),
+      var(--bg);
+    color:var(--text); min-height:100vh;
+  }
+  .app { max-width:900px; margin:0 auto; padding:28px 20px 40px; }
+  header { text-align:center; margin-bottom:22px; }
+  h1 { font-size:2rem; font-weight:700; letter-spacing:-.02em; }
+  h1 .grad {
+    background:linear-gradient(90deg,#b7a6ff,#67e3f7);
+    -webkit-background-clip:text; background-clip:text;
+    color:transparent; -webkit-text-fill-color:transparent;
+  }
+  .sub { color:var(--dim); margin-top:4px; font-size:.95rem; }
+
+  #banner { display:flex; gap:10px; align-items:flex-start; background:rgba(239,68,68,.12);
+    border:1px solid rgba(239,68,68,.4); color:#fecaca; padding:10px 14px; border-radius:12px;
+    margin-bottom:16px; font-size:.9rem; line-height:1.4; }
+  #banner button { margin-left:auto; background:none; border:none; color:#fecaca; cursor:pointer; font-size:1rem; flex-shrink:0; }
+
+  .langbar { display:flex; align-items:flex-end; justify-content:center; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+  .langbox { display:flex; flex-direction:column; gap:5px; }
+  .langbox label { font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; color:var(--dimmer); padding-left:2px; }
+  select { background:#161c30; color:var(--text); border:1px solid var(--border); border-radius:10px;
+    padding:9px 12px; font-size:.95rem; min-width:170px; cursor:pointer; outline:none; }
+  select:focus { border-color:var(--accent1); }
+  #swapBtn { width:40px; height:40px; border-radius:50%; background:var(--card); border:1px solid var(--border);
+    color:var(--text); font-size:1.1rem; cursor:pointer; transition:.25s; margin-bottom:1px; }
+  #swapBtn:hover { border-color:var(--accent2); color:var(--accent2); transform:rotate(180deg); }
+
+  .panels { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:22px; }
+  .panel { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:16px 18px; }
+  .panel.accent { border-color:rgba(34,211,238,.25); background:rgba(34,211,238,.05); }
+  .panel-head { font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; color:var(--dimmer); margin-bottom:10px; }
+  .text { font-size:1.22rem; line-height:1.55; min-height:120px; max-height:230px; overflow-y:auto; overflow-wrap:break-word; }
+  .text:empty::before { content:attr(data-placeholder); color:var(--dimmer); font-size:1rem; }
+  .interim { color:var(--dimmer); }
+  .text::-webkit-scrollbar { width:6px; }
+  .text::-webkit-scrollbar-thumb { background:rgba(255,255,255,.15); border-radius:3px; }
+
+  .microw { display:flex; flex-direction:column; align-items:center; gap:12px; margin-bottom:8px; }
+  #micBtn { position:relative; width:86px; height:86px; border-radius:50%; border:none; cursor:pointer;
+    background:linear-gradient(135deg,var(--accent1),var(--accent2));
+    box-shadow:0 8px 30px rgba(124,92,255,.35);
+    display:flex; align-items:center; justify-content:center; transition:transform .15s, box-shadow .3s; }
+  #micBtn:hover { transform:scale(1.05); }
+  #micBtn svg { width:36px; height:36px; fill:#fff; position:relative; z-index:1; }
+  #micBtn.on { background:linear-gradient(135deg,#ef4444,#f97316); box-shadow:0 8px 30px rgba(239,68,68,.4); }
+  #micBtn.pulse::before, #micBtn.pulse::after { content:''; position:absolute; inset:0; border-radius:50%;
+    border:2px solid rgba(239,68,68,.55); animation:pulse 1.6s ease-out infinite; }
+  #micBtn.pulse::after { animation-delay:.55s; }
+  @keyframes pulse { 0% { transform:scale(1); opacity:.9; } 100% { transform:scale(1.7); opacity:0; } }
+  #micBtn:disabled { filter:grayscale(.8); opacity:.5; cursor:not-allowed; }
+  #status { color:var(--dim); font-size:.92rem; min-height:1.3em; text-align:center; }
+  .hide { display:none; }
+
+  .optrow { display:flex; justify-content:center; align-items:center; gap:22px; margin:10px 0 24px; flex-wrap:wrap; }
+  .switch { display:flex; align-items:center; gap:9px; cursor:pointer; font-size:.9rem; color:var(--dim); user-select:none; }
+  .switch input { display:none; }
+  .track { width:38px; height:21px; border-radius:11px; background:rgba(255,255,255,.14); position:relative; transition:.2s; flex-shrink:0; }
+  .track::after { content:''; position:absolute; top:2.5px; left:3px; width:16px; height:16px; border-radius:50%; background:#fff; transition:.2s; }
+  .switch input:checked + .track { background:var(--accent2); }
+  .switch input:checked + .track::after { transform:translateX(16px); }
+  .ghost { background:none; border:1px solid var(--border); color:var(--dim); border-radius:10px; padding:7px 14px; font-size:.88rem; cursor:pointer; transition:.2s; }
+  .ghost:hover { color:var(--text); border-color:rgba(255,255,255,.3); }
+
+  .typed { display:flex; gap:10px; margin-bottom:26px; }
+  .typed input { flex:1; background:#161c30; border:1px solid var(--border); border-radius:12px; color:var(--text); padding:11px 14px; font-size:.95rem; outline:none; min-width:0; }
+  .typed input:focus { border-color:var(--accent1); }
+  .typed button { background:linear-gradient(135deg,var(--accent1),var(--accent2)); border:none; color:#fff; font-weight:600; border-radius:12px; padding:0 20px; cursor:pointer; font-size:.95rem; }
+  .typed button:hover { filter:brightness(1.1); }
+
+  .history h2 { font-size:.78rem; text-transform:uppercase; letter-spacing:.1em; color:var(--dimmer); margin-bottom:10px; }
+  #emptyH { color:var(--dimmer); font-size:.9rem; }
+  #historyList { list-style:none; display:flex; flex-direction:column; gap:8px; }
+  #historyList li { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:10px 14px; display:flex; align-items:center; gap:12px; }
+  .h-texts { flex:1; min-width:0; }
+  .h-src { color:var(--dimmer); font-size:.85rem; margin-bottom:2px; }
+  .h-dst { font-size:1rem; }
+  .h-btn { background:none; border:none; color:var(--dim); cursor:pointer; font-size:1.05rem; padding:4px 6px; border-radius:8px; }
+  .h-btn:hover { color:var(--accent2); background:rgba(255,255,255,.06); }
+
+  footer { margin-top:34px; text-align:center; color:var(--dimmer); font-size:.8rem; line-height:1.7; }
+
+  @media (max-width:720px) {
+    .panels { grid-template-columns:1fr; }
+    h1 { font-size:1.6rem; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>🎙️ <span class="grad">Traduttore Vocale</span></h1>
+    <p class="sub">Parla, traduci e ascolta — in tempo reale</p>
+  </header>
+
+  <div id="banner" hidden>
+    <span id="bannerMsg"></span>
+    <button id="bannerClose" aria-label="Chiudi avviso">✕</button>
+  </div>
+
+  <div class="langbar">
+    <div class="langbox">
+      <label for="srcSel">Parli in</label>
+      <select id="srcSel"></select>
+    </div>
+    <button id="swapBtn" title="Inverti le lingue" aria-label="Inverti le lingue">⇄</button>
+    <div class="langbox">
+      <label for="dstSel">Traduci in</label>
+      <select id="dstSel"></select>
+    </div>
+  </div>
+
+  <div class="panels">
+    <section class="panel">
+      <div class="panel-head" id="srcLabel">Italiano</div>
+      <div class="text" id="srcText" dir="auto" data-placeholder="Le tue parole appariranno qui…"></div>
+    </section>
+    <section class="panel accent">
+      <div class="panel-head" id="dstLabel">Inglese</div>
+      <div class="text" id="dstText" dir="auto" data-placeholder="…e qui la traduzione"></div>
+    </section>
+  </div>
+
+  <div class="microw">
+    <button id="micBtn" aria-label="Avvia o ferma l'ascolto">
+      <svg id="icoMic" viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+      <svg id="icoStop" class="hide" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>
+    </button>
+    <div id="status"></div>
+  </div>
+
+  <div class="optrow">
+    <label class="switch">
+      <input type="checkbox" id="autoSpeak" checked>
+      <span class="track"></span>
+      🔊 Leggi la traduzione ad alta voce
+    </label>
+    <button class="ghost" id="clearBtn">🧹 Pulisci tutto</button>
+  </div>
+
+  <div class="typed">
+    <input id="typedInput" type="text" placeholder="…oppure scrivi qui una frase e premi Invio" autocomplete="off">
+    <button id="typedBtn">Traduci</button>
+  </div>
+
+  <section class="history">
+    <h2>Cronologia</h2>
+    <div id="emptyH">Le frasi tradotte appariranno qui.</div>
+    <ul id="historyList"></ul>
+  </section>
+
+  <footer>
+    Funziona con Google Chrome e Microsoft Edge · Richiede una connessione a Internet<br>
+    Suggerimento: premi la <b>barra spaziatrice</b> per avviare/fermare l'ascolto · Usa le <b>cuffie</b> per evitare che il microfono capti la voce sintetica
+  </footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var LANGS = [
+    { code:'it',    rec:'it-IT', name:'Italiano',   flag:'🇮🇹' },
+    { code:'en',    rec:'en-US', name:'Inglese',    flag:'🇬🇧' },
+    { code:'es',    rec:'es-ES', name:'Spagnolo',   flag:'🇪🇸' },
+    { code:'fr',    rec:'fr-FR', name:'Francese',   flag:'🇫🇷' },
+    { code:'de',    rec:'de-DE', name:'Tedesco',    flag:'🇩🇪' },
+    { code:'pt',    rec:'pt-PT', name:'Portoghese', flag:'🇵🇹' },
+    { code:'ro',    rec:'ro-RO', name:'Rumeno',     flag:'🇷🇴' },
+    { code:'ru',    rec:'ru-RU', name:'Russo',      flag:'🇷🇺' },
+    { code:'uk',    rec:'uk-UA', name:'Ucraino',    flag:'🇺🇦' },
+    { code:'pl',    rec:'pl-PL', name:'Polacco',    flag:'🇵🇱' },
+    { code:'nl',    rec:'nl-NL', name:'Olandese',   flag:'🇳🇱' },
+    { code:'el',    rec:'el-GR', name:'Greco',      flag:'🇬🇷' },
+    { code:'tr',    rec:'tr-TR', name:'Turco',      flag:'🇹🇷' },
+    { code:'ar',    rec:'ar-SA', name:'Arabo',      flag:'🇸🇦' },
+    { code:'zh-CN', rec:'zh-CN', name:'Cinese',     flag:'🇨🇳' },
+    { code:'ja',    rec:'ja-JP', name:'Giapponese', flag:'🇯🇵' },
+    { code:'ko',    rec:'ko-KR', name:'Coreano',    flag:'🇰🇷' },
+    { code:'hi',    rec:'hi-IN', name:'Hindi',      flag:'🇮🇳' }
+  ];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var srcSel = $('srcSel'), dstSel = $('dstSel'), micBtn = $('micBtn'), statusEl = $('status'),
+      srcText = $('srcText'), dstText = $('dstText'), bannerEl = $('banner'), bannerMsg = $('bannerMsg'),
+      histList = $('historyList'), emptyH = $('emptyH'), autoSpeak = $('autoSpeak'), typedInput = $('typedInput');
+
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  var state = { active:false, recRunning:false, pausedForTTS:false, interimSeq:0, restartTimer:null, lastStart:0, quickEnds:0 };
+  var rec = null, phrases = [], interimSrc = '', interimDst = '', voices = [];
+
+  function langByCode(c) { for (var i = 0; i < LANGS.length; i++) if (LANGS[i].code === c) return LANGS[i]; return LANGS[0]; }
+  function srcLang() { return langByCode(srcSel.value); }
+  function dstLang() { return langByCode(dstSel.value); }
+
+  // ---------- UI di base ----------
+  [srcSel, dstSel].forEach(function (sel) {
+    LANGS.forEach(function (l) {
+      var o = document.createElement('option');
+      o.value = l.code; o.textContent = l.flag + ' ' + l.name;
+      sel.appendChild(o);
+    });
+  });
+  srcSel.value = localStorage.getItem('tv_src') || 'it';
+  dstSel.value = localStorage.getItem('tv_dst') || 'en';
+  if (!srcSel.value) srcSel.value = 'it';
+  if (!dstSel.value) dstSel.value = 'en';
+  autoSpeak.checked = localStorage.getItem('tv_speak') !== '0';
+
+  function persist() {
+    localStorage.setItem('tv_src', srcSel.value);
+    localStorage.setItem('tv_dst', dstSel.value);
+    localStorage.setItem('tv_speak', autoSpeak.checked ? '1' : '0');
+  }
+  function updateLabels() {
+    $('srcLabel').textContent = srcLang().name;
+    $('dstLabel').textContent = dstLang().name;
+  }
+
+  var STATUS = {
+    idle: 'Premi il microfono e inizia a parlare',
+    listening: '🎙️ In ascolto… parla pure',
+    speaking: '🔊 Riproduzione della traduzione…',
+    unsupported: 'Riconoscimento vocale non disponibile in questo browser'
+  };
+  function setStatus(k) { statusEl.textContent = STATUS[k] || k; }
+
+  function showBanner(msg) { bannerMsg.textContent = msg; bannerEl.hidden = false; }
+  $('bannerClose').onclick = function () { bannerEl.hidden = true; };
+
+  // ---------- Rendering pannelli ----------
+  function fillText(el, parts, interim) {
+    el.textContent = '';
+    var joined = parts.join(' ');
+    if (joined) {
+      var s = document.createElement('span');
+      s.textContent = joined;
+      el.appendChild(s);
+    }
+    if (interim) {
+      var i = document.createElement('span');
+      i.className = 'interim';
+      i.textContent = (joined ? ' ' : '') + interim;
+      el.appendChild(i);
+    }
+    el.scrollTop = el.scrollHeight;
+  }
+  function renderPanels() {
+    fillText(srcText, phrases.map(function (p) { return p.src; }), interimSrc);
+    fillText(dstText, phrases.map(function (p) { return p.dst == null ? '…' : p.dst; }), interimDst);
+  }
+
+  // ---------- Traduzione ----------
+  var cache = new Map();
+  function translateText(text, from, to) {
+    var key = from + '|' + to + '|' + text;
+    if (cache.has(key)) return Promise.resolve(cache.get(key));
+    return viaGoogle(text, from, to)
+      .catch(function () { return viaMyMemory(text, from, to); })
+      .then(function (out) {
+        cache.set(key, out);
+        if (cache.size > 400) cache.delete(cache.keys().next().value);
+        return out;
+      });
+  }
+  function viaGoogle(text, from, to) {
+    var u = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=' + from + '&tl=' + to + '&dt=t&q=' + encodeURIComponent(text);
+    return fetch(u).then(function (r) {
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.json();
+    }).then(function (d) {
+      var s = (d && Array.isArray(d[0]))
+        ? d[0].map(function (x) { return (x && x[0]) || ''; }).join('')
+        : '';
+      if (!s.trim()) throw new Error('vuoto');
+      return s.trim();
+    });
+  }
+  function viaMyMemory(text, from, to) {
+    var u = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=' + encodeURIComponent(from + '|' + to);
+    return fetch(u).then(function (r) {
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.json();
+    }).then(function (d) {
+      var s = d && d.responseData && d.responseData.translatedText;
+      if (!s || /INVALID|NO QUERY|DISTINCT/i.test(s)) throw new Error('mymemory');
+      return s;
+    });
+  }
+
+  // ---------- Frasi finali e provvisorie ----------
+  function handleFinal(text) {
+    text = (text || '').trim();
+    if (!text) return;
+    state.interimSeq++; interimSrc = ''; interimDst = '';
+    var to = dstLang();
+    var item = { src: text, dst: null };
+    phrases.push(item);
+    renderPanels();
+    translateText(text, srcLang().code, to.code).then(function (t) {
+      item.dst = t;
+      renderPanels();
+      addHistory(text, t, to.rec);
+      if (autoSpeak.checked) speak(t, to.rec);
+    }).catch(function () {
+      item.dst = '⚠️ Traduzione non disponibile';
+      renderPanels();
+      showBanner('Impossibile raggiungere il servizio di traduzione. Controlla la connessione a Internet.');
+    });
+  }
+
+  var interimTimer = 0;
+  function handleInterim(text) {
+    interimSrc = text;
+    renderPanels();
+    clearTimeout(interimTimer);
+    if (!text.trim()) { interimDst = ''; renderPanels(); return; }
+    interimTimer = setTimeout(function () {
+      var seq = ++state.interimSeq;
+      translateText(text.trim(), srcLang().code, dstLang().code).then(function (t) {
+        if (seq === state.interimSeq) { interimDst = t; renderPanels(); }
+      }).catch(function () {});
+    }, 350);
+  }
+
+  // ---------- Riconoscimento vocale ----------
+  function ensureRec() {
+    if (rec) return rec;
+    rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.maxAlternatives = 1;
+    rec.onstart = function () {
+      state.recRunning = true;
+      state.lastStart = performance.now();
+      micBtn.classList.add('pulse');
+      if (state.active) setStatus('listening');
+    };
+    rec.onend = function () {
+      state.recRunning = false;
+      micBtn.classList.remove('pulse');
+      if (!state.active || state.pausedForTTS) return;
+      if (performance.now() - state.lastStart < 1000) {
+        state.quickEnds++;
+        if (state.quickEnds > 5) {
+          stopSession();
+          showBanner('Il riconoscimento vocale continua a interrompersi. Verifica microfono e connessione, oppure apri la pagina con Google Chrome.');
+          return;
+        }
+      } else {
+        state.quickEnds = 0;
+      }
+      scheduleRestart();
+    };
+    rec.onerror = function (e) {
+      var err = e.error;
+      if (err === 'no-speech' || err === 'aborted') return;
+      if (err === 'not-allowed' || err === 'service-not-allowed') {
+        stopSession();
+        showBanner("Permesso microfono negato. Consenti l'accesso al microfono per questa pagina e riprova.");
+      } else if (err === 'audio-capture') {
+        stopSession();
+        showBanner('Nessun microfono rilevato. Collega un microfono e riprova.');
+      } else if (err === 'network') {
+        stopSession();
+        showBanner('Servizio di riconoscimento vocale non raggiungibile: serve una connessione a Internet. Se il problema persiste, apri la pagina con Google Chrome o Microsoft Edge.');
+      }
+    };
+    rec.onresult = function (e) {
+      state.quickEnds = 0;
+      var interim = '';
+      for (var i = e.resultIndex; i < e.results.length; i++) {
+        var r = e.results[i];
+        if (r.isFinal) handleFinal(r[0].transcript);
+        else interim += r[0].transcript;
+      }
+      handleInterim(interim);
+    };
+    return rec;
+  }
+
+  function scheduleRestart() {
+    clearTimeout(state.restartTimer);
+    state.restartTimer = setTimeout(function () {
+      if (state.active && !state.pausedForTTS) startRec();
+    }, 300);
+  }
+  function startRec() {
+    ensureRec();
+    rec.lang = srcLang().rec;
+    try { rec.start(); } catch (_) { /* già avviato */ }
+  }
+  function updateMicUI() {
+    micBtn.classList.toggle('on', state.active);
+    $('icoMic').classList.toggle('hide', state.active);
+    $('icoStop').classList.toggle('hide', !state.active);
+    if (!state.active) micBtn.classList.remove('pulse');
+  }
+  function startSession() {
+    if (!SR) return;
+    bannerEl.hidden = true;
+    state.active = true;
+    state.pausedForTTS = false;
+    state.quickEnds = 0;
+    updateMicUI();
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    setStatus('listening');
+    startRec();
+  }
+  function stopSession() {
+    state.active = false;
+    state.pausedForTTS = false;
+    clearTimeout(state.restartTimer);
+    if (rec) { try { rec.stop(); } catch (_) {} }
+    updateMicUI();
+    setStatus('idle');
+  }
+  micBtn.onclick = function () { state.active ? stopSession() : startSession(); };
+
+  // ---------- Sintesi vocale ----------
+  function loadVoices() { voices = speechSynthesis.getVoices() || []; }
+  if ('speechSynthesis' in window) {
+    loadVoices();
+    speechSynthesis.onvoiceschanged = loadVoices;
+  }
+  function pickVoice(lang) {
+    var L = lang.toLowerCase(), base = L.split('-')[0], i;
+    for (i = 0; i < voices.length; i++)
+      if (voices[i].lang && voices[i].lang.toLowerCase().replace('_', '-') === L) return voices[i];
+    for (i = 0; i < voices.length; i++)
+      if (voices[i].lang && voices[i].lang.toLowerCase().indexOf(base) === 0) return voices[i];
+    return null;
+  }
+  function speak(text, lang) {
+    if (!('speechSynthesis' in window) || !text) return;
+    var u = new SpeechSynthesisUtterance(text);
+    u.lang = lang;
+    var v = pickVoice(lang);
+    if (v) u.voice = v;
+    u.onstart = function () {
+      // pausa il microfono mentre parla la voce sintetica, per evitare che si ascolti da sola
+      if (state.active) {
+        state.pausedForTTS = true;
+        clearTimeout(state.restartTimer);
+        if (state.recRunning && rec) { try { rec.abort(); } catch (_) {} }
+        setStatus('speaking');
+      }
+    };
+    var done = function () {
+      if (speechSynthesis.speaking || speechSynthesis.pending) return; // ci sono altre frasi in coda
+      if (state.active) {
+        state.pausedForTTS = false;
+        setStatus('listening');
+        scheduleRestart();
+      }
+    };
+    u.onend = done;
+    u.onerror = done;
+    speechSynthesis.speak(u);
+  }
+
+  // ---------- Cronologia ----------
+  function addHistory(src, dst, dstRec) {
+    emptyH.hidden = true;
+    var li = document.createElement('li');
+    var texts = document.createElement('div'); texts.className = 'h-texts';
+    var a = document.createElement('div'); a.className = 'h-src'; a.dir = 'auto'; a.textContent = src;
+    var b = document.createElement('div'); b.className = 'h-dst'; b.dir = 'auto'; b.textContent = dst;
+    texts.appendChild(a); texts.appendChild(b);
+
+    var replay = document.createElement('button');
+    replay.className = 'h-btn'; replay.title = 'Riascolta'; replay.textContent = '🔊';
+    replay.onclick = function () { speak(dst, dstRec); };
+
+    var copy = document.createElement('button');
+    copy.className = 'h-btn'; copy.title = 'Copia traduzione'; copy.textContent = '📋';
+    copy.onclick = function () {
+      var okIcon = function () { copy.textContent = '✅'; setTimeout(function () { copy.textContent = '📋'; }, 1200); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(dst).then(okIcon, function () {});
+    };
+
+    li.appendChild(texts); li.appendChild(replay); li.appendChild(copy);
+    histList.insertBefore(li, histList.firstChild);
+    while (histList.children.length > 50) histList.removeChild(histList.lastChild);
+  }
+
+  $('clearBtn').onclick = function () {
+    phrases = []; interimSrc = ''; interimDst = '';
+    state.interimSeq++;
+    renderPanels();
+    histList.textContent = '';
+    emptyH.hidden = false;
+  };
+
+  // ---------- Cambio lingua ----------
+  function onLangChange() {
+    persist();
+    updateLabels();
+    state.interimSeq++; interimSrc = ''; interimDst = '';
+    renderPanels();
+    // riavvia il riconoscimento con la nuova lingua
+    if (state.active && rec && state.recRunning) { try { rec.abort(); } catch (_) {} }
+  }
+  srcSel.onchange = onLangChange;
+  dstSel.onchange = onLangChange;
+  autoSpeak.onchange = persist;
+  $('swapBtn').onclick = function () {
+    var a = srcSel.value;
+    srcSel.value = dstSel.value;
+    dstSel.value = a;
+    onLangChange();
+  };
+
+  // ---------- Input testuale ----------
+  function submitTyped() {
+    var t = typedInput.value.trim();
+    if (!t) return;
+    typedInput.value = '';
+    handleFinal(t);
+  }
+  $('typedBtn').onclick = submitTyped;
+  typedInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') submitTyped(); });
+
+  // barra spaziatrice = avvia/ferma (solo se non stai scrivendo)
+  document.addEventListener('keydown', function (e) {
+    if (e.code === 'Space' && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].indexOf(e.target.tagName) === -1) {
+      e.preventDefault();
+      micBtn.click();
+    }
+  });
+
+  // hook di test (usabile dalla console): __test('ciao come stai')
+  window.__test = function (t) { handleFinal(t); };
+
+  // ---------- Avvio ----------
+  updateLabels();
+  renderPanels();
+  if (!SR) {
+    micBtn.disabled = true;
+    setStatus('unsupported');
+    showBanner('Il riconoscimento vocale non è supportato in questo browser. Apri questa pagina con Google Chrome o Microsoft Edge. Puoi comunque tradurre scrivendo il testo nella casella qui sotto.');
+  } else {
+    setStatus('idle');
+  }
+})();
+</script>
+</body>
+</html>

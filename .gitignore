@@ -1,0 +1,4 @@
+node_modules/
+*.log
+test-*.wav
+Thumbs.db
