@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Traduttore Vocale in Tempo Reale</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b1020">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   :root {
@@ -125,11 +129,12 @@
   <header>
     <h1>🎙️ <span class="grad">Traduttore Vocale</span></h1>
     <p class="sub">Parla, traduci e ascolta — in tempo reale</p>
+    <button class="ghost hide" id="installBtn" style="margin-top:10px">📲 Installa come app</button>
   </header>
 
   <div class="modes">
     <button class="mode sel" id="modeMic">🎙️ Microfono</button>
-    <button class="mode" id="modeCall">🎧 Chiamata Discord</button>
+    <button class="mode" id="modeCall">🎧 Audio del PC</button>
   </div>
 
   <div id="banner" hidden>
@@ -173,12 +178,12 @@
       <span id="busyTxt"></span>
     </div>
     <div id="callHint" class="hide">
-      Premi il pulsante, scegli la <b>finestra di Discord</b> (o quello che hai impostato in “Cosa catturare”)
-      e assicurati che l’interruttore <b>“Condividi anche l’audio”</b> sia attivo: l’audio di quella finestra verrà
-      trascritto e sottotitolato automaticamente. Se per la finestra non compare l’opzione audio, usa
-      <b>Tutto lo schermo</b> con “Condividi anche l’audio di sistema”.
-      L’audio resta sul tuo PC: la trascrizione avviene localmente nel browser.
-      Per correttezza, avvisa i partecipanti che la chiamata viene sottotitolata.
+      Premi il pulsante e scegli <b>cosa tradurre</b>: la finestra di un’app (Discord, un video, una riunione, un gioco…),
+      una scheda del browser o tutto lo schermo — con l’interruttore <b>“Condividi anche l’audio”</b> attivo.
+      L’audio verrà trascritto e sottotitolato automaticamente. Se per la finestra non compare l’opzione audio,
+      usa <b>Tutto lo schermo</b> con “Condividi anche l’audio di sistema”.
+      L’audio resta sul tuo PC: la trascrizione avviene localmente.
+      Se catturi una chiamata, per correttezza avvisa i partecipanti.
     </div>
   </div>
 
@@ -195,7 +200,7 @@
     <div class="langbox">
       <label for="capSel">Cosa catturare</label>
       <select id="capSel">
-        <option value="window">🪟 Una finestra (es. Discord)</option>
+        <option value="window">🪟 Una finestra specifica</option>
         <option value="monitor">🖥️ Tutto lo schermo</option>
         <option value="browser">🌐 Una scheda del browser</option>
       </select>
@@ -230,7 +235,7 @@
 
   <footer>
     Funziona con Google Chrome e Microsoft Edge · Richiede una connessione a Internet<br>
-    Modalità chiamata: trascrizione con Whisper eseguito <b>localmente</b> nel browser — l’audio non lascia il tuo PC<br>
+    Modalità Audio del PC: trascrizione con Whisper eseguito <b>localmente</b> — l’audio non lascia il tuo PC<br>
     Suggerimento: premi la <b>barra spaziatrice</b> per avviare/fermare · In modalità microfono usa le <b>cuffie</b> per evitare eco
   </footer>
 </div>
@@ -324,8 +329,8 @@
     listening: '🎙️ In ascolto… parla pure',
     speaking: '🔊 Riproduzione della traduzione…',
     unsupported: 'Riconoscimento vocale non disponibile in questo browser',
-    callIdle: 'Premi il pulsante e condividi lo schermo (con l’audio) della chiamata',
-    callListening: '🎧 In ascolto della chiamata… i sottotitoli appaiono in basso'
+    callIdle: 'Premi il pulsante e condividi la finestra o lo schermo (con l’audio) da tradurre',
+    callListening: '🎧 In ascolto… i sottotitoli appaiono in basso'
   };
   function setStatus(k) { statusEl.textContent = STATUS[k] || k; }
 
@@ -649,7 +654,7 @@
     lastText:'', lastVoice:0, watchdog:null, wasmHintShown:false, slowHintShown:false
   };
   function callListeningText() {
-    var s = call.surf === 'window' ? 'della finestra condivisa' : call.surf === 'browser' ? 'della scheda condivisa' : 'della chiamata';
+    var s = call.surf === 'window' ? 'della finestra condivisa' : call.surf === 'browser' ? 'della scheda condivisa' : 'dell’audio condiviso';
     return '🎧 In ascolto ' + s + '… i sottotitoli appaiono in basso';
   }
   var jobs = [], workerBusy = false, jobId = 0;
@@ -680,8 +685,9 @@
     '  try {',
     "    if (!navigator.gpu) throw new Error('webgpu assente');",
     '    try {',
-    "      transcriber = await mk('webgpu', { encoder_model: 'fp16', decoder_model_merged: 'q4' });",
-    "      device = 'webgpu'; quant = 'fp16+q4';",
+    "      // encoder fp32: in fp16 whisper base/small puo dare overflow (trascrizioni vuote)",
+    "      transcriber = await mk('webgpu', { encoder_model: 'fp32', decoder_model_merged: 'q4' });",
+    "      device = 'webgpu'; quant = 'fp32+q4';",
     '    } catch (e1) {',
     "      transcriber = await mk('webgpu', 'fp32'); device = 'webgpu'; quant = 'fp32';",
     '    }',
@@ -762,7 +768,15 @@
         }
         if (m.device === 'wasm' && modelSel.value !== 'tiny' && !call.wasmHintShown) {
           call.wasmHintShown = true;
-          showBanner('GPU non disponibile in questo browser: la trascrizione userà la CPU e potrebbe essere lenta. Se i sottotitoli arrivano molto in ritardo, imposta “Qualità riconoscimento” su ⚡ Veloce.', 'info');
+          if (localStorage.getItem('tv_model_user') !== '1') {
+            // niente GPU: passa da solo al modello leggero per restare in tempo reale
+            modelSel.value = 'tiny';
+            localStorage.setItem('tv_model', 'tiny');
+            ensureAsr();
+            showBanner('GPU non disponibile su questo dispositivo: ho impostato la qualità ⚡ Veloce per mantenere i sottotitoli fluidi sulla CPU. Puoi cambiarla quando vuoi.', 'info');
+          } else {
+            showBanner('GPU non disponibile: la trascrizione userà la CPU e potrebbe essere lenta. Se i sottotitoli arrivano in ritardo, imposta ⚡ Veloce.', 'info');
+          }
         }
         pump();
       } else if (m.type === 'result') {
@@ -801,6 +815,7 @@
   }
   modelSel.onchange = function () {
     localStorage.setItem('tv_model', modelSel.value);
+    localStorage.setItem('tv_model_user', '1');
     if (call.worker) ensureAsr();
   };
 
@@ -893,9 +908,9 @@
       // se la trascrizione è indietro, taglia segmenti più lunghi: Whisper elabora
       // un blocco da 12 s quasi allo stesso costo di uno da 4 s (più resa, meno coda)
       var pending = jobs.length + (workerBusy ? 1 : 0);
-      var maxMs = Math.min(12000, 4000 + 4000 * pending);
-      if (seg.silenceMs >= 500 || segMs >= maxMs) {
-        var frames = seg.frames, ok = seg.speechMs >= 250;
+      var maxMs = Math.min(12000, 3500 + 4000 * pending);
+      if (seg.silenceMs >= 400 || segMs >= maxMs) {
+        var frames = seg.frames, ok = seg.speechMs >= 200;
         seg.frames = []; seg.speech = false; seg.speechMs = 0; seg.silenceMs = 0;
         if (ok) submitSegment(concatFrames(frames));
       }
@@ -971,7 +986,7 @@
       if (autoSpeak.checked) {
         autoSpeak.checked = false;
         persist();
-        showBanner('🔇 Lettura vocale disattivata in modalità chiamata: la voce sintetica verrebbe ricatturata dall’audio di sistema. Puoi riattivarla se usi le cuffie.', 'info');
+        showBanner('🔇 Lettura vocale disattivata durante la cattura: la voce sintetica verrebbe ricatturata dall’audio di sistema. Puoi riattivarla se usi le cuffie.', 'info');
       }
     }).catch(function () {
       // condivisione annullata dall'utente
@@ -980,7 +995,7 @@
   }
   function stopCall() {
     // l'eventuale frase a metà viene comunque trascritta (i risultati arrivano anche dopo lo stop)
-    if (seg.speech && seg.speechMs >= 250) submitSegment(concatFrames(seg.frames));
+    if (seg.speech && seg.speechMs >= 200) submitSegment(concatFrames(seg.frames));
     call.active = false;
     clearInterval(call.watchdog);
     if (call.stream) { call.stream.getTracks().forEach(function (t) { t.stop(); }); call.stream = null; }
@@ -1044,11 +1059,11 @@
     modeCall.classList.toggle('sel', mode === 'call');
     callRow.classList.toggle('hide', mode !== 'call');
     callHint.classList.toggle('hide', mode !== 'call');
-    $('srcBoxLabel').textContent = mode === 'call' ? 'Lingua della chiamata' : 'Parli in';
+    $('srcBoxLabel').textContent = mode === 'call' ? 'Lingua dell’audio' : 'Parli in';
     $('dstBoxLabel').textContent = mode === 'call' ? 'Sottotitoli in' : 'Traduci in';
     autoOpt.disabled = (mode === 'mic');
     if (mode === 'mic' && srcSel.value === 'auto') { srcSel.value = 'it'; onLangChange(); }
-    srcText.setAttribute('data-placeholder', mode === 'call' ? 'Quello che dicono nella chiamata apparirà qui…' : 'Le tue parole appariranno qui…');
+    srcText.setAttribute('data-placeholder', mode === 'call' ? 'L’audio catturato apparirà qui trascritto…' : 'Le tue parole appariranno qui…');
     if (mode !== 'call') { subsEl.classList.add('hide'); }
     // pre-carica il modello appena si entra nella scheda Chiamata: così all'avvio è già pronto
     if (mode === 'call') { try { ensureAsr(); } catch (_) {} }
@@ -1118,6 +1133,25 @@
     }).catch(function (e) { window.__dbg.lastError = 'test: ' + e; });
     return 'avviato';
   };
+
+  // ---------- PWA: service worker e installazione ----------
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    });
+  }
+  var deferredPrompt = null, installBtn = $('installBtn');
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    deferredPrompt = e;
+    installBtn.classList.remove('hide');
+  });
+  installBtn.onclick = function () {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(function () { deferredPrompt = null; installBtn.classList.add('hide'); });
+  };
+  window.addEventListener('appinstalled', function () { installBtn.classList.add('hide'); });
 
   // ---------- Avvio ----------
   updateLabels();

@@ -3,11 +3,15 @@
 Web app che traduce la voce in tempo reale, in due modalità:
 
 - **🎙️ Microfono** — parli, l'app trascrive, traduce e legge la traduzione ad alta voce
-- **🎧 Chiamata Discord** — cattura l'audio di sistema di una chiamata (Discord o qualsiasi altra app) e mostra **sottotitoli tradotti in tempo reale** nella lingua scelta
+- **🎧 Audio del PC** — cattura l'audio di qualsiasi finestra o app (Discord, un video, una riunione, un gioco…) e mostra **sottotitoli tradotti in tempo reale** nella lingua scelta
 
-Tutto in un singolo file `index.html`, senza dipendenze da installare e senza chiavi API.
+È una **PWA installabile**: dal browser si installa come app vera, con icona e finestra propria, anche sul telefono.
 
 **▶️ Provalo online: https://darkchri.github.io/traduttore-vocale/**
+
+## Installa come app
+
+Apri il link qui sopra con Chrome o Edge e premi **📲 Installa come app** (o l'icona di installazione nella barra degli indirizzi). L'app si avvia poi dal menu Start / dalla home come qualsiasi applicazione.
 
 ## Come si avvia
 
@@ -21,10 +25,10 @@ node server.js
 
 poi apri http://localhost:8617
 
-## Modalità Chiamata Discord
+## Modalità 🎧 Audio del PC
 
-1. Apri la scheda **🎧 Chiamata Discord** e scegli la lingua della chiamata (o **🌐 Rileva lingua**) e la lingua dei sottotitoli
-2. In **"Cosa catturare"** lascia **🪟 Una finestra**: premi il pulsante grande, seleziona la finestra di Discord e attiva **"Condividi anche l'audio"** — verrà tradotto solo l'audio di quella finestra
+1. Apri la scheda **🎧 Audio del PC** e scegli la lingua dell'audio (o **🌐 Rileva lingua**) e la lingua dei sottotitoli
+2. In **"Cosa catturare"** lascia **🪟 Una finestra**: premi il pulsante grande, seleziona la finestra da tradurre (Discord, YouTube, Meet, un gioco…) e attiva **"Condividi anche l'audio"** — verrà tradotto solo l'audio di quella finestra
 3. I **sottotitoli flottanti** (finestrella sempre in primo piano) si aprono da soli all'avvio: trascinala sopra Discord. I sottotitoli compaiono anche in basso nella pagina
 4. Al primo avvio viene scaricato il modello di riconoscimento (una sola volta, poi resta in cache)
 
