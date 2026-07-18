@@ -73,6 +73,9 @@
   @keyframes pulse { 0% { transform:scale(1); opacity:.9; } 100% { transform:scale(1.7); opacity:0; } }
   #micBtn:disabled { filter:grayscale(.8); opacity:.5; cursor:not-allowed; }
   #status { color:var(--dim); font-size:.92rem; min-height:1.3em; text-align:center; }
+  #lvlWrap { display:flex; align-items:center; gap:10px; color:var(--dimmer); font-size:.82rem; }
+  #lvlTrack { width:140px; height:6px; border-radius:3px; background:rgba(255,255,255,.1); overflow:hidden; }
+  #lvlBar { height:100%; width:0%; background:linear-gradient(90deg,var(--accent2),#4ade80); border-radius:3px; transition:width .12s linear; }
   #callHint { color:var(--dimmer); font-size:.82rem; text-align:center; max-width:580px; margin:0 auto; line-height:1.55; }
   .hide { display:none !important; }
 
@@ -164,6 +167,11 @@
       <svg id="icoStop" class="hide" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>
     </button>
     <div id="status"></div>
+    <div id="lvlWrap" class="hide">
+      <div id="lvlTrack"><div id="lvlBar"></div></div>
+      <span id="lvlText">🔈 in attesa di parlato…</span>
+      <span id="busyTxt"></span>
+    </div>
     <div id="callHint" class="hide">
       Premi il pulsante, scegli la <b>finestra di Discord</b> (o quello che hai impostato in “Cosa catturare”)
       e assicurati che l’interruttore <b>“Condividi anche l’audio”</b> sia attivo: l’audio di quella finestra verrà
@@ -264,6 +272,7 @@
       histList = $('historyList'), emptyH = $('emptyH'), autoSpeak = $('autoSpeak'), typedInput = $('typedInput'),
       modelSel = $('modelSel'), pipBtn = $('pipBtn'), mdlProgress = $('mdlProgress'),
       capSel = $('capSel'), autoPip = $('autoPip'),
+      lvlWrap = $('lvlWrap'), lvlBar = $('lvlBar'), lvlText = $('lvlText'), busyTxt = $('busyTxt'),
       subsEl = $('subs'), subPrev = $('subPrev'), subCur = $('subCur'), callHint = $('callHint'), callRow = $('callRow');
 
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -637,7 +646,7 @@
   var call = {
     stream:null, ctx:null, node:null, active:false, surf:'',
     worker:null, loadedModel:'', modelReady:false, device:null,
-    noise:0.008, lastText:''
+    noise:0.008, lastText:'', lastVoice:0, watchdog:null, wasmHintShown:false
   };
   function callListeningText() {
     var s = call.surf === 'window' ? 'della finestra condivisa' : call.surf === 'browser' ? 'della scheda condivisa' : 'della chiamata';
@@ -718,6 +727,13 @@
     var txt = 'Scarico il modello… ' + pct + '% (solo la prima volta, poi resta in cache)';
     mdlProgress.textContent = txt;
     if (mode === 'call') setStatus(txt);
+    // mostra l'avanzamento anche nei sottotitoli, così durante la cattura è impossibile non vederlo
+    if (call.active) {
+      subCur.textContent = '⏳ Scarico il modello… ' + pct + '%';
+      subsEl.classList.remove('hide');
+      clearTimeout(subsTimer);
+      if (pipEls) pipEls.cur.textContent = '⏳ Scarico il modello… ' + pct + '%';
+    }
   }
 
   function wireWorker() {
@@ -731,9 +747,21 @@
         window.__dbg.device = m.device;
         mdlProgress.textContent = 'Modello pronto · ' + (m.device === 'webgpu' ? 'GPU ⚡' : 'CPU');
         if (mode === 'call') setStatus(call.active ? callListeningText() : 'callIdle');
+        if (call.active) {
+          subCur.textContent = '✅ Modello pronto: parla pure!';
+          subsEl.classList.remove('hide');
+          clearTimeout(subsTimer);
+          subsTimer = setTimeout(function () { subsEl.classList.add('hide'); }, 3000);
+          if (pipEls) pipEls.cur.textContent = '✅ Modello pronto: parla pure!';
+        }
+        if (m.device === 'wasm' && modelSel.value !== 'tiny' && !call.wasmHintShown) {
+          call.wasmHintShown = true;
+          showBanner('GPU non disponibile in questo browser: la trascrizione userà la CPU e potrebbe essere lenta. Se i sottotitoli arrivano molto in ritardo, imposta “Qualità riconoscimento” su ⚡ Veloce.', 'info');
+        }
         pump();
       } else if (m.type === 'result') {
         workerBusy = false;
+        if (!jobs.length) busyTxt.textContent = '';
         window.__dbg.lastAsr = m.text;
         var t = cleanAsr(m.text);
         if (t) handleFinal(t);
@@ -781,6 +809,7 @@
     if (workerBusy || !jobs.length || !call.modelReady) return;
     var audio = jobs.shift();
     workerBusy = true;
+    busyTxt.textContent = '📝 trascrivo…';
     var lang = srcSel.value === 'auto' ? null : srcLang().w;
     call.worker.postMessage({ type: 'run', id: ++jobId, audio: audio, language: lang }, [audio.buffer]);
   }
@@ -822,11 +851,19 @@
   }
   function processFrame(frame) {
     var rms = rmsOf(frame);
-    var thr = Math.max(call.noise * 3, 0.005);
+    var thr = Math.max(call.noise * 2.5, 0.0035);
     if (rms < thr) call.noise = Math.min(0.92 * call.noise + 0.08 * rms, 0.02);
+    // indicatore di livello: così si vede subito se l'audio sta arrivando
+    lvlBar.style.width = Math.min(100, Math.round(rms * 1400)) + '%';
+    if (rms >= thr) {
+      call.lastVoice = performance.now();
+      lvlText.textContent = '🔊 audio rilevato';
+    } else if (performance.now() - call.lastVoice > 2000) {
+      lvlText.textContent = '🔈 in attesa di parlato…';
+    }
     if (!seg.speech) {
       seg.preroll.push(frame);
-      if (seg.preroll.length > 4) seg.preroll.shift();
+      if (seg.preroll.length > 3) seg.preroll.shift();
       if (rms >= thr) {
         seg.speech = true;
         seg.frames = seg.preroll.slice();
@@ -839,8 +876,8 @@
       if (rms >= thr) { seg.speechMs += 100; seg.silenceMs = 0; }
       else seg.silenceMs += 100;
       var segMs = seg.frames.length * 100;
-      if (seg.silenceMs >= 700 || segMs >= 8000) {
-        var frames = seg.frames, ok = seg.speechMs >= 300;
+      if (seg.silenceMs >= 500 || segMs >= 5000) {
+        var frames = seg.frames, ok = seg.speechMs >= 250;
         seg.frames = []; seg.speech = false; seg.speechMs = 0; seg.silenceMs = 0;
         if (ok) submitSegment(concatFrames(frames));
       }
@@ -881,8 +918,19 @@
       call.stream = stream;
       call.active = true;
       call.lastText = '';
+      call.lastVoice = performance.now();
       resetSeg();
       updateMicUI();
+      lvlWrap.classList.remove('hide');
+      lvlBar.style.width = '0%';
+      lvlText.textContent = '🔈 in attesa di parlato…';
+      clearInterval(call.watchdog);
+      call.watchdog = setInterval(function () {
+        if (!call.active) return;
+        if (performance.now() - call.lastVoice > 12000) {
+          setStatus('🔇 Non sento audio dalla sorgente condivisa: controlla che l’audio sia stato condiviso e che il volume non sia a zero.');
+        }
+      }, 3000);
       stream.getAudioTracks()[0].addEventListener('ended', stopCall);
       ensureAsr();
       var Ctx = window.AudioContext || window.webkitAudioContext;
@@ -913,12 +961,16 @@
     });
   }
   function stopCall() {
+    // l'eventuale frase a metà viene comunque trascritta (i risultati arrivano anche dopo lo stop)
+    if (seg.speech && seg.speechMs >= 250) submitSegment(concatFrames(seg.frames));
     call.active = false;
+    clearInterval(call.watchdog);
     if (call.stream) { call.stream.getTracks().forEach(function (t) { t.stop(); }); call.stream = null; }
     if (call.ctx) { call.ctx.close().catch(function () {}); call.ctx = null; call.node = null; }
-    jobs = [];
     resetSeg();
     updateMicUI();
+    lvlWrap.classList.add('hide');
+    busyTxt.textContent = '';
     if (mode === 'call') setStatus('callIdle');
   }
 
@@ -980,6 +1032,8 @@
     if (mode === 'mic' && srcSel.value === 'auto') { srcSel.value = 'it'; onLangChange(); }
     srcText.setAttribute('data-placeholder', mode === 'call' ? 'Quello che dicono nella chiamata apparirà qui…' : 'Le tue parole appariranno qui…');
     if (mode !== 'call') { subsEl.classList.add('hide'); }
+    // pre-carica il modello appena si entra nella scheda Chiamata: così all'avvio è già pronto
+    if (mode === 'call') { try { ensureAsr(); } catch (_) {} }
     updateMicUI();
     if (mode === 'call') setStatus(call.active ? callListeningText() : 'callIdle');
     else if (!SR) setStatus('unsupported');
