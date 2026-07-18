@@ -646,7 +646,7 @@
   var call = {
     stream:null, ctx:null, node:null, active:false, surf:'',
     worker:null, loadedModel:'', modelReady:false, device:null,
-    noise:0.008, lastText:'', lastVoice:0, watchdog:null, wasmHintShown:false
+    lastText:'', lastVoice:0, watchdog:null, wasmHintShown:false
   };
   function callListeningText() {
     var s = call.surf === 'window' ? 'della finestra condivisa' : call.surf === 'browser' ? 'della scheda condivisa' : 'della chiamata';
@@ -851,8 +851,9 @@
   }
   function processFrame(frame) {
     var rms = rmsOf(frame);
-    var thr = Math.max(call.noise * 2.5, 0.0035);
-    if (rms < thr) call.noise = Math.min(0.92 * call.noise + 0.08 * rms, 0.02);
+    // soglia fissa bassa: l'audio di sistema ha silenzio digitale vero, e una soglia
+    // adattiva scambierebbe musica/sottofondo per rumore, "accecando" il riconoscimento
+    var thr = 0.004;
     // indicatore di livello: così si vede subito se l'audio sta arrivando
     lvlBar.style.width = Math.min(100, Math.round(rms * 1400)) + '%';
     if (rms >= thr) {
@@ -1067,6 +1068,25 @@
   // ---------- Hook di test/debug (usabili dalla console) ----------
   window.__dbg = { device: null, segs: 0, lastAsr: '', lastError: null, progress: 0 };
   window.__test = function (t) { handleFinal(t); };
+  // test del percorso live completo (VAD + segmentazione), non solo del worker
+  window.__testVad = function (url) {
+    setMode('call');
+    ensureAsr();
+    fetch(url).then(function (r) { return r.arrayBuffer(); }).then(function (ab) {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      var actx = new Ctx({ sampleRate: 16000 });
+      return actx.decodeAudioData(ab).then(function (buf) { actx.close(); return buf; });
+    }).then(function (buf) {
+      var data = buf.getChannelData(0);
+      var wasActive = call.active;
+      call.active = true;
+      for (var i = 0; i < data.length; i += 1600) feedPCM(data.subarray(i, Math.min(i + 1600, data.length)));
+      var sil = new Float32Array(1600);
+      for (var j = 0; j < 8; j++) feedPCM(sil); // coda di silenzio per chiudere l'ultimo segmento
+      call.active = wasActive;
+    }).catch(function (e) { window.__dbg.lastError = 'testVad: ' + e; });
+    return 'avviato';
+  };
   window.__testCall = function (url, langCode, model) {
     if (model) { modelSel.value = model; localStorage.setItem('tv_model', model); }
     setMode('call');
