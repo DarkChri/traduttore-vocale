@@ -7,6 +7,8 @@ Web app che traduce la voce in tempo reale, in due modalità:
 
 Tutto in un singolo file `index.html`, senza dipendenze da installare e senza chiavi API.
 
+**▶️ Provalo online: https://darkchri.github.io/traduttore-vocale/**
+
 ## Come si avvia
 
 **Modo più semplice:** doppio click su `index.html` con Google Chrome o Microsoft Edge.
