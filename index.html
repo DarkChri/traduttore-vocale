@@ -238,6 +238,7 @@
       🪟 Sottotitoli flottanti automatici
     </label>
     <button class="ghost" id="pipBtn">🪟 Sottotitoli flottanti</button>
+    <button class="ghost hide" id="thruBtn">👆 Rendi di nuovo cliccabili i sottotitoli</button>
     <span id="mdlProgress"></span>
   </div>
 
@@ -313,7 +314,7 @@
       srcText = $('srcText'), dstText = $('dstText'), bannerEl = $('banner'), bannerMsg = $('bannerMsg'),
       histList = $('historyList'), emptyH = $('emptyH'), autoSpeak = $('autoSpeak'), typedInput = $('typedInput'),
       modelSel = $('modelSel'), pipBtn = $('pipBtn'), mdlProgress = $('mdlProgress'),
-      capSel = $('capSel'), autoPip = $('autoPip'),
+      capSel = $('capSel'), autoPip = $('autoPip'), thruBtn = $('thruBtn'),
       lvlWrap = $('lvlWrap'), lvlBar = $('lvlBar'), lvlText = $('lvlText'), busyTxt = $('busyTxt'),
       subsEl = $('subs'), subPrev = $('subPrev'), subCur = $('subCur'), callHint = $('callHint'), callRow = $('callRow');
 
@@ -912,6 +913,7 @@
   }
   function feedPCM(block) {
     if (!call.active) return;
+    if (call.ratio && Math.abs(call.ratio - 1) > 0.01) block = downsample(block, call.ratio);
     var i = 0;
     while (i < block.length) {
       var n = Math.min(1600 - frameFill, block.length - i);
@@ -958,6 +960,17 @@
         if (ok) submitSegment(concatFrames(frames));
       }
     }
+  }
+  // ricampionamento lineare, usato solo se il contesto audio non e a 16 kHz
+  function downsample(block, ratio) {
+    var outLen = Math.floor(block.length / ratio);
+    var out = new Float32Array(outLen);
+    for (var i = 0; i < outLen; i++) {
+      var pos = i * ratio, i0 = Math.floor(pos), frac = pos - i0;
+      var a = block[i0], b = i0 + 1 < block.length ? block[i0 + 1] : a;
+      out[i] = a + (b - a) * frac;
+    }
+    return out;
   }
   function concatFrames(frames) {
     var len = 0, i;
@@ -1072,6 +1085,9 @@
         }
         return;
       }
+      // il video non serve a nulla: tenerlo acceso costa CPU/GPU per codificare
+      // lo schermo a ogni frame. Si ferma subito, resta solo l'audio.
+      stream.getVideoTracks().forEach(function (t) { t.stop(); stream.removeTrack(t); });
       call.surf = surf;
       call.stream = stream;
       call.active = true;
@@ -1093,6 +1109,10 @@
       ensureAsr();
       var Ctx = window.AudioContext || window.webkitAudioContext;
       call.ctx = new Ctx({ sampleRate: 16000 });
+      // il loopback segue il mixer di Windows (48000 o 44100): se il contesto non
+      // ha accettato i 16 kHz che Whisper richiede, si ricampiona a valle
+      call.ratio = call.ctx.sampleRate / 16000;
+      window.__dbg.ctxRate = call.ctx.sampleRate;
       call.ctx.audioWorklet.addModule(workletUrl()).then(function () {
         if (!call.active || !call.ctx) return;
         var srcNode = call.ctx.createMediaStreamSource(stream);
@@ -1187,6 +1207,12 @@
     window.nativeApp.onOverlayClosed(function () {
       pipWin = null;
       pipBtn.textContent = '🪟 Sottotitoli flottanti';
+      thruBtn.classList.add('hide');
+    });
+    // quando l'overlay diventa trasparente ai clic non e piu cliccabile:
+    // l'unico modo per riattivarlo e questo pulsante nella finestra principale
+    window.nativeApp.onClickThroughChanged(function (on) {
+      thruBtn.classList.toggle('hide', !on);
     });
   }
 
@@ -1302,6 +1328,10 @@
 
   // ---------- Adattamenti per l'app desktop ----------
   if (NATIVE) {
+    thruBtn.onclick = function () {
+      window.nativeApp.setClickThrough(false);
+      thruBtn.classList.add('hide');
+    };
     installBtn.classList.add('hide');
     capSel.parentElement.classList.add('hide');   // la sorgente si sceglie nel selettore interno
     callHint.innerHTML = 'Premi il pulsante e scegli <b>quale finestra</b> stai guardando o ascoltando. ' +

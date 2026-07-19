@@ -8,7 +8,7 @@ const isDev = process.argv.includes('--dev');
 let mainWin = null;
 let overlayWin = null;
 let pendingSourceId = null; // sorgente scelta dall'utente nel selettore interno all'app
-let loopbackSupported = true;
+let loopbackMode = 'loopback'; // oppure 'loopbackWithMute' come ripiego
 
 // ---------------------------------------------------------------------------
 // Finestra principale
@@ -53,36 +53,46 @@ sandbox: false
 // Il renderer chiama getDisplayMedia() e questo handler risponde con la sorgente
 // gia scelta dall'utente nel selettore interno all'app.
 // ---------------------------------------------------------------------------
+let displayHandlerRegistered = false;
+
 function registerDisplayMediaHandler() {
+  // ri-registrare fallisce in silenzio (electron#39566): registrare una sola volta
+  if (displayHandlerRegistered) return;
+  displayHandlerRegistered = true;
+
   const ses = session.defaultSession;
 
   ses.setPermissionRequestHandler((wc, permission, callback) => {
-    // l'app e locale e di proprieta dell'utente: microfono e cattura sono sempre concessi
-    callback(['media', 'display-capture', 'audioCapture', 'videoCapture'].includes(permission));
+    // l'app e locale e di proprieta dell'utente: microfono e cattura sono concessi.
+    // NB: nella *request* esistono solo 'media' e 'display-capture'
+    callback(permission === 'media' || permission === 'display-capture');
   });
 
-  ses.setDisplayMediaRequestHandler(
-    async (request, callback) => {
-      try {
-        const types = ['screen', 'window'];
-        const sources = await desktopCapturer.getSources({ types, fetchWindowIcons: false });
-        let chosen = pendingSourceId ? sources.find((s) => s.id === pendingSourceId) : null;
-        if (!chosen) chosen = sources.find((s) => s.id.startsWith('screen:')) || sources[0];
-        if (!chosen) {
-          callback({});
-          return;
-        }
-        // 'loopback' = audio di sistema catturato nativamente (Windows), nessuna
-        // finestra di dialogo e nessun interruttore da attivare.
-        callback({ video: chosen, audio: loopbackSupported ? 'loopback' : undefined });
-      } catch (e) {
-        console.error('Errore nella selezione della sorgente:', e);
+  // niente useSystemPicker: e solo macOS 15+, su Windows e inerte
+  ses.setDisplayMediaRequestHandler(async (request, callback) => {
+    try {
+      const sources = await desktopCapturer.getSources({
+        types: ['screen', 'window'],
+        thumbnailSize: { width: 0, height: 0 }, // qui le anteprime non servono: piu veloce
+        fetchWindowIcons: false
+      });
+      let chosen = pendingSourceId ? sources.find((s) => s.id === pendingSourceId) : null;
+      if (!chosen) chosen = sources.find((s) => s.id.startsWith('screen:')) || sources[0];
+      if (!chosen) {
         callback({});
+        return;
       }
-    },
-    // useSystemPicker: false -> usiamo sempre il nostro selettore interno
-    { useSystemPicker: false }
-  );
+      // 'loopback' = audio di sistema catturato nativamente (Windows): nessuna
+      // finestra di dialogo e nessun interruttore da attivare.
+      callback({
+        video: chosen,
+        audio: request.audioRequested && loopbackMode ? loopbackMode : undefined
+      });
+    } catch (e) {
+      console.error('Errore nella selezione della sorgente:', e);
+      callback({}); // il callback va SEMPRE chiamato, altrimenti la promise resta appesa
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -95,8 +105,15 @@ ipcMain.handle('sources:list', async () => {
     thumbnailSize: thumbSize,
     fetchWindowIcons: true
   });
+  // esclude le finestre dell'app stessa confrontando gli id reali, non i nomi
+  const own = new Set();
+  for (const w of [mainWin, overlayWin]) {
+    if (w && !w.isDestroyed()) {
+      try { own.add(w.getMediaSourceId()); } catch (e) { /* finestra non ancora pronta */ }
+    }
+  }
   return sources
-    .filter((s) => s.name && s.name !== 'Traduttore Vocale')
+    .filter((s) => s.name && !own.has(s.id))
     .map((s) => ({
       id: s.id,
       name: s.name,
@@ -156,8 +173,19 @@ function createOverlay() {
   // evita che l'overlay finisca dentro la cattura schermo (si sottotitolerebbe da solo)
   overlayWin.setContentProtection(true);
   overlayWin.once('ready-to-show', () => overlayWin.showInactive());
+
+  // altre app che si dichiarano "sempre in primo piano" possono scavalcarci:
+  // si ri-asserisce periodicamente (senza il toggle false->true, che farebbe
+  // perdere l'always-on-top ad altre finestre di sistema — electron#31536)
+  const keepOnTop = setInterval(() => {
+    if (!overlayWin || overlayWin.isDestroyed()) { clearInterval(keepOnTop); return; }
+    overlayWin.setAlwaysOnTop(true, 'screen-saver');
+  }, 4000);
+
   overlayWin.on('closed', () => {
+    clearInterval(keepOnTop);
     overlayWin = null;
+    overlayClickThrough = false;
     if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('overlay:closed');
   });
   return true;
@@ -175,11 +203,17 @@ ipcMain.on('overlay:text', (_e, payload) => {
 ipcMain.on('overlay:style', (_e, payload) => {
   if (overlayWin && !overlayWin.isDestroyed()) overlayWin.webContents.send('overlay:style', payload);
 });
+let overlayClickThrough = false;
 ipcMain.on('overlay:clickThrough', (_e, on) => {
+  overlayClickThrough = !!on;
   if (overlayWin && !overlayWin.isDestroyed()) {
-    overlayWin.setIgnoreMouseEvents(!!on, { forward: true });
+    overlayWin.setIgnoreMouseEvents(overlayClickThrough, { forward: true });
+    // la finestra principale deve poter riattivare l'interazione: da sola
+    // l'overlay diventerebbe incliccabile e quindi irrecuperabile
+    if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('overlay:clickThroughChanged', overlayClickThrough);
   }
 });
+ipcMain.handle('overlay:getClickThrough', () => overlayClickThrough);
 ipcMain.on('overlay:hideSelf', () => {
   if (overlayWin && !overlayWin.isDestroyed()) overlayWin.close();
 });
