@@ -1,0 +1,68 @@
+{
+  "name": "traduttore-vocale",
+  "version": "1.0.0",
+  "description": "Traduzione vocale in tempo reale con sottotitoli: microfono o audio del PC",
+  "author": "DarkChri",
+  "license": "MIT",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "icon": "node build/make-icon.js",
+    "build": "npm run icon && electron-builder --win",
+    "build:portable": "npm run icon && electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "png-to-ico": "^2.1.8",
+    "sharp": "^0.35.3"
+  },
+  "build": {
+    "appId": "it.darkchri.traduttorevocale",
+    "productName": "Traduttore Vocale",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "index.html",
+      "icon-192.png",
+      "icon-512.png",
+      "manifest.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Traduttore Vocale"
+    },
+    "portable": {
+      "artifactName": "TraduttoreVocale-portable.exe"
+    }
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}

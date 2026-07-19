@@ -112,6 +112,25 @@
 
   footer { margin-top:34px; text-align:center; color:var(--dimmer); font-size:.8rem; line-height:1.7; }
 
+  #pickBack { position:fixed; inset:0; z-index:80; background:rgba(4,7,16,.82); backdrop-filter:blur(4px);
+    display:flex; align-items:center; justify-content:center; padding:24px; }
+  #pickCard { background:#101728; border:1px solid var(--border); border-radius:18px; width:min(880px,100%);
+    max-height:86vh; display:flex; flex-direction:column; overflow:hidden; }
+  #pickHead { padding:18px 22px 12px; border-bottom:1px solid var(--border); }
+  #pickHead h3 { font-size:1.15rem; font-weight:700; }
+  #pickHead p { color:var(--dim); font-size:.88rem; margin-top:4px; }
+  #pickTabs { display:flex; gap:4px; padding:12px 22px 0; }
+  #pickTabs button { background:transparent; border:none; color:var(--dim); padding:7px 14px; border-radius:9px; cursor:pointer; font-size:.9rem; }
+  #pickTabs button.sel { background:rgba(255,255,255,.08); color:var(--text); font-weight:600; }
+  #pickGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; padding:16px 22px 22px; overflow-y:auto; }
+  .pickItem { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:8px; cursor:pointer; transition:.18s; text-align:left; }
+  .pickItem:hover { border-color:var(--accent2); background:rgba(34,211,238,.08); transform:translateY(-2px); }
+  .pickItem img.thumb { width:100%; aspect-ratio:16/9; object-fit:cover; border-radius:8px; background:#0a0f1c; display:block; }
+  .pickItem .nm { display:flex; align-items:center; gap:6px; margin-top:7px; font-size:.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pickItem .nm img { width:16px; height:16px; flex-shrink:0; }
+  #pickFoot { padding:12px 22px 18px; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+  #pickFoot small { color:var(--dimmer); font-size:.8rem; }
+
   #subs { position:fixed; left:50%; transform:translateX(-50%); bottom:26px; z-index:50;
     max-width:min(860px, 92vw); background:rgba(5,8,18,.86); border:1px solid rgba(255,255,255,.12);
     backdrop-filter:blur(6px); border-radius:14px; padding:12px 24px; text-align:center; pointer-events:none; }
@@ -243,6 +262,24 @@
 <div id="subs" class="hide">
   <div id="subPrev" dir="auto"></div>
   <div id="subCur" dir="auto"></div>
+</div>
+
+<div id="pickBack" class="hide">
+  <div id="pickCard">
+    <div id="pickHead">
+      <h3>Scegli cosa tradurre</h3>
+      <p>L’audio del PC viene catturato automaticamente: nessuna impostazione da attivare.</p>
+    </div>
+    <div id="pickTabs">
+      <button id="tabWin" class="sel">🪟 Finestre</button>
+      <button id="tabScr">🖥️ Schermi</button>
+    </div>
+    <div id="pickGrid"></div>
+    <div id="pickFoot">
+      <small>💡 Suggerimento: la scelta serve a inquadrare la sorgente; viene trascritto tutto l’audio che senti.</small>
+      <button class="ghost" id="pickCancel">Annulla</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -782,6 +819,10 @@
       } else if (m.type === 'result') {
         workerBusy = false;
         if (!jobs.length) busyTxt.textContent = '';
+        if (window.__dbg.tStart) {
+          window.__dbg.lastMs = Math.round(performance.now() - window.__dbg.tStart);
+          window.__dbg.rtf = Math.round(window.__dbg.lastMs / (window.__dbg.lastAudioSec * 1000) * 100) / 100;
+        }
         window.__dbg.lastAsr = m.text;
         var t = cleanAsr(m.text);
         if (t) handleFinal(t);
@@ -837,6 +878,8 @@
     if (workerBusy || !jobs.length || !call.modelReady) return;
     var audio = jobs.shift();
     workerBusy = true;
+    window.__dbg.tStart = performance.now();
+    window.__dbg.lastAudioSec = Math.round(audio.length / 16000 * 100) / 100;
     busyTxt.textContent = '📝 trascrivo…';
     var lang = srcSel.value === 'auto' ? null : srcLang().w;
     call.worker.postMessage({ type: 'run', id: ++jobId, audio: audio, language: lang }, [audio.buffer]);
@@ -924,18 +967,91 @@
     return out;
   }
 
+  // ---------- Selettore nativo delle sorgenti (solo nell'app desktop) ----------
+  var NATIVE = !!(window.nativeApp && window.nativeApp.isElectron);
+  var pickBack = $('pickBack'), pickGrid = $('pickGrid'), pickKind = 'window';
+
+  function openPicker() {
+    pickBack.classList.remove('hide');
+    renderPicker();
+  }
+  function closePicker() { pickBack.classList.add('hide'); }
+  function renderPicker() {
+    pickGrid.textContent = '';
+    var loading = document.createElement('div');
+    loading.style.cssText = 'color:rgba(232,236,244,.45);padding:8px';
+    loading.textContent = 'Cerco le finestre aperte…';
+    pickGrid.appendChild(loading);
+    window.nativeApp.listSources().then(function (list) {
+      pickGrid.textContent = '';
+      var items = list.filter(function (s) { return s.kind === pickKind; });
+      if (!items.length) {
+        var none = document.createElement('div');
+        none.style.cssText = 'color:rgba(232,236,244,.45);padding:8px';
+        none.textContent = 'Nessuna sorgente trovata.';
+        pickGrid.appendChild(none);
+        return;
+      }
+      items.forEach(function (s) {
+        var b = document.createElement('button');
+        b.className = 'pickItem';
+        if (s.thumbnail) {
+          var img = document.createElement('img');
+          img.className = 'thumb'; img.src = s.thumbnail; img.alt = '';
+          b.appendChild(img);
+        }
+        var nm = document.createElement('div');
+        nm.className = 'nm';
+        if (s.appIcon) { var ic = document.createElement('img'); ic.src = s.appIcon; ic.alt = ''; nm.appendChild(ic); }
+        var tx = document.createElement('span');
+        tx.textContent = s.name;
+        nm.appendChild(tx);
+        b.appendChild(nm);
+        b.onclick = function () {
+          closePicker();
+          window.nativeApp.selectSource(s.id).then(function () { beginCapture(); });
+        };
+        pickGrid.appendChild(b);
+      });
+    }).catch(function (e) {
+      pickGrid.textContent = '';
+      var err = document.createElement('div');
+      err.style.cssText = 'color:#fecaca;padding:8px';
+      err.textContent = 'Impossibile elencare le finestre: ' + e;
+      pickGrid.appendChild(err);
+    });
+  }
+  if (NATIVE) {
+    $('tabWin').onclick = function () { pickKind = 'window'; $('tabWin').classList.add('sel'); $('tabScr').classList.remove('sel'); renderPicker(); };
+    $('tabScr').onclick = function () { pickKind = 'screen'; $('tabScr').classList.add('sel'); $('tabWin').classList.remove('sel'); renderPicker(); };
+    $('pickCancel').onclick = function () { closePicker(); setStatus('callIdle'); };
+    pickBack.onclick = function (e) { if (e.target === pickBack) { closePicker(); setStatus('callIdle'); } };
+  }
+
   function startCall() {
     bannerEl.hidden = true;
+    if (NATIVE) { openPicker(); return; } // il selettore poi chiama beginCapture()
+    beginCapture();
+  }
+
+  function beginCapture() {
     var pref = capSel.value || 'window';
-    // istruzioni bene in vista mentre è aperto il selettore di condivisione
-    subPrev.textContent = '';
-    subCur.textContent = '1️⃣ Scegli cosa condividere · 2️⃣ Attiva “Condividi anche l’audio” (interruttore in basso) · 3️⃣ Premi Condividi';
-    subsEl.classList.remove('hide');
-    clearTimeout(subsTimer);
-    if (pipEls) pipEls.cur.textContent = 'Attiva “Condividi anche l’audio” nella finestra di scelta!';
+    // nell'app desktop l'audio e nativo: nessuna istruzione da mostrare
+    if (!NATIVE) {
+      subPrev.textContent = '';
+      subCur.textContent = '1️⃣ Scegli cosa condividere · 2️⃣ Attiva “Condividi anche l’audio” (interruttore in basso) · 3️⃣ Premi Condividi';
+      subsEl.classList.remove('hide');
+      clearTimeout(subsTimer);
+      if (pipEls) pipEls.cur.textContent = 'Attiva “Condividi anche l’audio” nella finestra di scelta!';
+    }
+    // nell'app: elaborazioni disattivate (su un audio di sistema eco e riduzione
+    // rumore peggiorano la trascrizione). Sul sito: richiesta semplice, piu compatibile.
+    var audioReq = NATIVE
+      ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      : true;
     navigator.mediaDevices.getDisplayMedia({
       video: { displaySurface: pref },
-      audio: true,
+      audio: audioReq,
       systemAudio: 'include',
       selfBrowserSurface: 'exclude',
       surfaceSwitching: 'include'
@@ -945,7 +1061,9 @@
       var surf = (vt && vt.getSettings && vt.getSettings().displaySurface) || pref;
       if (!stream.getAudioTracks().length) {
         stream.getTracks().forEach(function (t) { t.stop(); });
-        if (surf === 'window') {
+        if (NATIVE) {
+          showBanner('Windows non ha fornito l’audio di sistema. Verifica che ci sia un dispositivo di riproduzione attivo (altoparlanti o cuffie) e che stia suonando qualcosa, poi riprova.');
+        } else if (surf === 'window') {
           capSel.value = 'monitor';
           capSel.onchange();
           showBanner('La finestra scelta non fornisce audio: o l’interruttore “Condividi anche l’audio” era spento, o il tuo browser non supporta ancora la cattura audio di una singola finestra. Ho impostato “Tutto lo schermo”: ripremi il pulsante e spunta “Condividi anche l’audio di sistema” (sentirà comunque solo la chiamata, se non c’è altro audio attivo).');
@@ -1025,9 +1143,18 @@
     clearTimeout(subsTimer);
     subsTimer = setTimeout(function () { subsEl.classList.add('hide'); }, 9000);
     if (pipEls) { pipEls.prev.textContent = subPrev.textContent; pipEls.cur.textContent = t; }
+    if (NATIVE) window.nativeApp.sendSubtitle({ prev: subPrev.textContent, cur: t });
   }
-  if (!('documentPictureInPicture' in window)) { pipBtn.classList.add('hide'); autoPip.parentElement.classList.add('hide'); }
+  if (!NATIVE && !('documentPictureInPicture' in window)) { pipBtn.classList.add('hide'); autoPip.parentElement.classList.add('hide'); }
   function openPip() {
+    if (NATIVE) {
+      // nell'app desktop l'overlay e una vera finestra sempre in primo piano
+      window.nativeApp.openOverlay().then(function () {
+        pipWin = true;
+        pipBtn.textContent = '🪟 Chiudi sottotitoli flottanti';
+      });
+      return;
+    }
     if (pipWin || !('documentPictureInPicture' in window)) return;
     documentPictureInPicture.requestWindow({ width: 760, height: 170 }).then(function (w) {
       pipWin = w;
@@ -1049,8 +1176,19 @@
     }).catch(function () {});
   }
   pipBtn.onclick = function () {
+    if (NATIVE) {
+      if (pipWin) { window.nativeApp.closeOverlay(); pipWin = null; pipBtn.textContent = '🪟 Sottotitoli flottanti'; }
+      else openPip();
+      return;
+    }
     if (pipWin) pipWin.close(); else openPip();
   };
+  if (NATIVE) {
+    window.nativeApp.onOverlayClosed(function () {
+      pipWin = null;
+      pipBtn.textContent = '🪟 Sottotitoli flottanti';
+    });
+  }
 
   // ---------- Cambio modalità ----------
   var modeMic = $('modeMic'), modeCall = $('modeCall');
@@ -1143,7 +1281,8 @@
   };
 
   // ---------- PWA: service worker e installazione ----------
-  if ('serviceWorker' in navigator) {
+  // solo sul sito: in Electron i file sono locali e il service worker non serve
+  if (!NATIVE && 'serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
     window.addEventListener('load', function () {
       navigator.serviceWorker.register('sw.js').catch(function () {});
     });
@@ -1160,6 +1299,19 @@
     deferredPrompt.userChoice.then(function () { deferredPrompt = null; installBtn.classList.add('hide'); });
   };
   window.addEventListener('appinstalled', function () { installBtn.classList.add('hide'); });
+
+  // ---------- Adattamenti per l'app desktop ----------
+  if (NATIVE) {
+    installBtn.classList.add('hide');
+    capSel.parentElement.classList.add('hide');   // la sorgente si sceglie nel selettore interno
+    callHint.innerHTML = 'Premi il pulsante e scegli <b>quale finestra</b> stai guardando o ascoltando. ' +
+      'L’audio del PC viene catturato automaticamente — nessuna impostazione da attivare. ' +
+      'La trascrizione avviene <b>in locale</b>: l’audio non lascia il tuo computer. ' +
+      'Se catturi una chiamata, per correttezza avvisa i partecipanti.';
+    document.querySelector('footer').innerHTML =
+      'App desktop · Trascrizione con Whisper eseguita <b>localmente</b> — l’audio non lascia il tuo PC<br>' +
+      'La traduzione richiede una connessione a Internet · Premi la <b>barra spaziatrice</b> per avviare/fermare';
+  }
 
   // ---------- Avvio ----------
   updateLabels();

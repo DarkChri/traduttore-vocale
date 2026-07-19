@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Sottotitoli</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; background:transparent; overflow:hidden; }
+  body {
+    font-family:'Segoe UI', system-ui, sans-serif;
+    display:flex; align-items:flex-end; justify-content:center;
+    padding:8px;
+  }
+  #box {
+    width:100%; background:rgba(6,10,20,.82); border:1px solid rgba(255,255,255,.10);
+    border-radius:14px; padding:12px 18px 14px; color:#fff;
+    -webkit-app-region: drag; user-select:none; position:relative;
+  }
+  #prev { color:rgba(255,255,255,.45); font-size:15px; line-height:1.35; min-height:20px; overflow-wrap:break-word; }
+  #cur { font-size:25px; font-weight:600; line-height:1.35; margin-top:4px; overflow-wrap:break-word;
+         text-shadow:0 2px 10px rgba(0,0,0,.6); }
+  #bar { position:absolute; top:6px; right:8px; display:flex; gap:4px; -webkit-app-region: no-drag; opacity:0; transition:opacity .15s; }
+  #box:hover #bar { opacity:1; }
+  #bar button { background:rgba(255,255,255,.10); border:none; color:#fff; width:24px; height:24px;
+    border-radius:6px; cursor:pointer; font-size:12px; line-height:1; }
+  #bar button:hover { background:rgba(255,255,255,.22); }
+  #bar button.on { background:#22d3ee; color:#04212a; }
+  #hint { position:absolute; bottom:3px; left:0; right:0; text-align:center; font-size:10px;
+    color:rgba(255,255,255,.28); -webkit-app-region:none; }
+</style>
+</head>
+<body>
+  <div id="box">
+    <div id="bar">
+      <button id="thru" title="Rendi trasparente ai clic (i clic passano sotto)">👆</button>
+      <button id="close" title="Chiudi i sottotitoli">✕</button>
+    </div>
+    <div id="prev" dir="auto"></div>
+    <div id="cur" dir="auto">In attesa di audio…</div>
+    <div id="hint">trascina per spostare</div>
+  </div>
+<script>
+  var prev = document.getElementById('prev'), cur = document.getElementById('cur');
+  var thru = document.getElementById('thru'), clickThrough = false;
+
+  if (window.nativeApp) {
+    window.nativeApp.onSubtitle(function (p) {
+      if (!p) return;
+      if (p.prev !== undefined) prev.textContent = p.prev || '';
+      if (p.cur !== undefined) cur.textContent = p.cur || '';
+    });
+  }
+
+  thru.onclick = function () {
+    clickThrough = !clickThrough;
+    thru.classList.toggle('on', clickThrough);
+    document.getElementById('hint').textContent = clickThrough
+      ? 'trasparente ai clic — riattiva dalla finestra principale'
+      : 'trascina per spostare';
+    if (window.nativeApp) window.nativeApp.setClickThrough(clickThrough);
+  };
+  document.getElementById('close').onclick = function () {
+    if (window.nativeApp) window.nativeApp.hideOverlay();
+  };
+</script>
+</body>
+</html>

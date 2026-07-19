@@ -1,68 +1,77 @@
-# 🎙️ Traduttore Vocale in Tempo Reale
+# 🎙️ Traduttore Vocale
 
-Web app che traduce la voce in tempo reale, in due modalità:
+App desktop per Windows che traduce l'audio in tempo reale e mostra i **sottotitoli tradotti** in una finestra sempre in primo piano.
+
+Due modalità:
 
 - **🎙️ Microfono** — parli, l'app trascrive, traduce e legge la traduzione ad alta voce
-- **🎧 Audio del PC** — cattura l'audio di qualsiasi finestra o app (Discord, un video, una riunione, un gioco…) e mostra **sottotitoli tradotti in tempo reale** nella lingua scelta
+- **🎧 Audio del PC** — cattura l'audio di qualunque cosa stia suonando sul computer (una chiamata, un video, una riunione, un gioco) e lo sottotitola tradotto
 
-È una **PWA installabile**: dal browser si installa come app vera, con icona e finestra propria, anche sul telefono.
+La trascrizione avviene **interamente sul tuo computer** con Whisper: l'audio non viene mai inviato a nessun server.
 
-**▶️ Provalo online: https://darkchri.github.io/traduttore-vocale/**
+## Installazione
 
-## Installa come app
+Scarica ed esegui uno dei due file dalla cartella `dist` (o dalla sezione Releases):
 
-Apri il link qui sopra con Chrome o Edge e premi **📲 Installa come app** (o l'icona di installazione nella barra degli indirizzi). L'app si avvia poi dal menu Start / dalla home come qualsiasi applicazione.
+| File | Cosa fa |
+|---|---|
+| `Traduttore Vocale Setup 1.0.0.exe` | Installa l'app con collegamenti nel menu Start e sul desktop |
+| `TraduttoreVocale-portable.exe` | Si avvia direttamente, senza installare niente |
 
-## Come si avvia
+Windows mostrerà un avviso "SmartScreen" perché l'app non ha una firma digitale a pagamento: scegli **Ulteriori informazioni → Esegui comunque**.
 
-**Modo più semplice:** doppio click su `index.html` con Google Chrome o Microsoft Edge.
+## Come si usa
 
-**In alternativa, con un server locale:**
+1. Apri la scheda **🎧 Audio del PC**
+2. Scegli la lingua dell'audio (o **🌐 Rileva lingua**) e la lingua dei sottotitoli
+3. Premi il pulsante grande: si apre il **selettore delle finestre**, scegli quella che stai guardando
+4. I sottotitoli compaiono nella finestrella flottante: trascinala dove preferisci, resta sempre in primo piano
 
+Non c'è nessuna impostazione di condivisione audio da attivare: l'app cattura l'audio di sistema in modo nativo.
+
+Al primo avvio viene scaricato il modello di riconoscimento (una sola volta, poi resta in cache).
+
+## Funzionalità
+
+- 18 lingue più il rilevamento automatico
+- Selettore nativo delle finestre aperte, con anteprime
+- Overlay dei sottotitoli sempre in primo piano, trascinabile e con modalità "trasparente ai clic"
+- Qualità del riconoscimento regolabile: ⚡ Veloce, ⚖️ Bilanciata, 🎯 Alta
+- Cronologia con riascolto 🔊 e copia 📋
+- Input testuale come alternativa all'audio
+- Scorciatoia: **barra spaziatrice** per avviare/fermare
+
+## Prestazioni
+
+Su una macchina con GPU compatibile WebGPU, la trascrizione con il modello **Bilanciata** gira a circa **0,2× il tempo reale** (misurato: 3,3 s di audio trascritti in ~550 ms), quindi regge senza problemi il parlato continuo. Senza GPU l'app passa automaticamente al modello ⚡ Veloce.
+
+## Sviluppo
+
+```bash
+npm install       # installa le dipendenze
+npm start         # avvia l'app
+npm run dev       # avvia con gli strumenti di sviluppo
+npm run build     # crea installer + portable in dist/
 ```
-node server.js
-```
-
-poi apri http://localhost:8617
-
-## Modalità 🎧 Audio del PC
-
-1. Apri la scheda **🎧 Audio del PC** e scegli la lingua dell'audio (o **🌐 Rileva lingua**) e la lingua dei sottotitoli
-2. In **"Cosa catturare"** lascia **🪟 Una finestra**: premi il pulsante grande, seleziona la finestra da tradurre (Discord, YouTube, Meet, un gioco…) e attiva **"Condividi anche l'audio"** — verrà tradotto solo l'audio di quella finestra
-3. I **sottotitoli flottanti** (finestrella sempre in primo piano) si aprono da soli all'avvio: trascinala sopra Discord. I sottotitoli compaiono anche in basso nella pagina
-4. Al primo avvio viene scaricato il modello di riconoscimento (una sola volta, poi resta in cache)
-
-> **Nota:** la cattura dell'audio di una *singola finestra* è una funzione recente di Chrome/Edge su Windows. Se per la finestra non compare l'opzione audio, l'app te lo segnala: usa **🖥️ Tutto lo schermo** con "Condividi anche l'audio di sistema" (sente tutto l'audio del PC, che in pratica durante una chiamata è solo la chiamata).
-
-La trascrizione avviene **localmente nel browser** con Whisper (WebGPU se disponibile, altrimenti CPU): l'audio della chiamata non viene inviato a nessun server. Per correttezza, avvisa i partecipanti che la chiamata viene sottotitolata.
-
-Qualità del riconoscimento selezionabile: **⚡ Veloce** (modello piccolo), **⚖️ Bilanciata** (consigliata), **🎯 Alta** (più pesante, meglio con GPU).
-
-## Modalità Microfono
-
-Premi il microfono, consenti l'accesso e parla: trascrizione e traduzione compaiono in tempo reale e la traduzione viene letta ad alta voce. Il microfono si mette in pausa mentre parla la voce sintetica. Scorciatoia: **barra spaziatrice**.
-
-## Altre funzionalità
-
-- 18 lingue + rilevamento automatico (in modalità chiamata)
-- Input testuale alternativo se non vuoi/puoi usare l'audio
-- Cronologia con riascolto 🔊 e copia 📋 di ogni frase
-- Le preferenze (lingue, modalità, qualità) vengono ricordate
 
 ## Come funziona
 
 | Passaggio | Tecnologia |
 |---|---|
-| Voce → testo (microfono) | Web Speech API del browser (`SpeechRecognition`) |
-| Voce → testo (chiamata) | Cattura schermo/audio (`getDisplayMedia`) + Whisper locale ([transformers.js](https://github.com/huggingface/transformers.js), WebGPU/WASM) |
-| Traduzione | Endpoint gratuito di Google Translate, con fallback su MyMemory |
-| Testo → voce | Sintesi vocale del browser (`speechSynthesis`) |
-| Sottotitoli flottanti | Document Picture-in-Picture API |
+| Cattura audio di sistema | Electron `setDisplayMediaRequestHandler` con audio `loopback` (nessun dialogo) |
+| Selettore finestre | Electron `desktopCapturer` |
+| Voce → testo | Whisper via [transformers.js](https://github.com/huggingface/transformers.js), in locale su WebGPU (fallback CPU) |
+| Traduzione | Endpoint gratuito di Google Translate, con riserva su MyMemory |
+| Testo → voce | Sintesi vocale di sistema |
+| Overlay sottotitoli | `BrowserWindow` senza bordi, `alwaysOnTop` a livello `screen-saver` |
 
-## Requisiti e limiti
+## Versione web
 
-- **Browser:** Google Chrome o Microsoft Edge recenti
-- **Internet:** necessario per la traduzione (e per il primo download del modello Whisper); la trascrizione della chiamata funziona poi in locale
-- I sottotitoli della chiamata arrivano con 1–3 secondi di ritardo (l'audio viene segmentato sulle pause del parlato)
-- I servizi di traduzione gratuiti possono imporre limiti in caso di uso molto intensivo
-- La qualità delle voci sintetiche dipende da quelle installate nel sistema/browser
+Esiste anche una versione da browser: https://darkchri.github.io/traduttore-vocale/ — stesse funzioni, ma per catturare l'audio di sistema richiede di attivare manualmente l'opzione "Condividi anche l'audio" nella finestra di condivisione di Chrome. L'app desktop evita del tutto questo passaggio.
+
+## Limiti
+
+- La traduzione richiede una connessione a Internet (la trascrizione no, dopo il primo download)
+- La cattura audio è dell'intero sistema, non della singola finestra: Windows non permette di isolare l'audio per applicazione
+- I sottotitoli arrivano 1–3 secondi dopo la frase, perché l'audio viene segmentato sulle pause
+- I servizi di traduzione gratuiti possono limitare un uso molto intensivo

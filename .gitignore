@@ -1,4 +1,6 @@
 node_modules/
+dist/
+build/icon.ico
 *.log
 test-*.wav
 Thumbs.db
